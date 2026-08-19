@@ -33,6 +33,18 @@ Run the application:
 ./build/bin/oxApp
 ```
 
+Run the oxMBS configuration and runtime logging bootstrap:
+
+```bash
+cp config/mbsconfig.ini.example config/mbsconfig.ini
+./build/bin/oxMbsBootstrap config/mbsconfig.ini
+```
+
+`oxMbsBootstrap` is the work-order #3 backend foundation. It validates the
+INI configuration, creates a per-run log file, mirrors key events to stdout,
+and reports Linux/WSL CPU, memory, and log-disk information. It does not yet
+start Query Workers, open System V queues, or process business messages.
+
 ## Layout
 
 ```text

@@ -6,6 +6,7 @@
 # Runtime output and local configuration
 /logs/
 /config/oxapp.ini
+/config/mbsconfig.ini
 *.log
 
 # IDE and editor files

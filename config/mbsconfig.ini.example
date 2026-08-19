@@ -1,0 +1,15 @@
+[service]
+name=oxMBS
+environment=development
+
+[server]
+host=127.0.0.1
+port=18080
+
+[worker]
+query_worker_count=2
+shutdown_timeout_ms=1000
+
+[logging]
+directory=logs
+level=INFO
