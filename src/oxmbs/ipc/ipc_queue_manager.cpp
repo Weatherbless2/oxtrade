@@ -13,15 +13,15 @@ IpcResult IpcQueueManager::open(const IpcQueueOptions& options, std::string& err
         return IpcResult::InvalidArgument;
     }
 
-    const auto request_result = request_queue_.create(options.request, error);
+    const auto request_result = request_queue_.create(options.request, error);  // 先建请求队列，失败时不创建第二个资源。
     if (request_result != IpcResult::Ok) {
         return request_result;
     }
 
-    const auto reply_result = reply_queue_.create(options.reply, error);
+    const auto reply_result = reply_queue_.create(options.reply, error);  // Reply 失败必须回滚已成功创建的 Request。
     if (reply_result != IpcResult::Ok) {
         std::string cleanup_error;
-        request_queue_.remove(cleanup_error);
+        request_queue_.remove(cleanup_error);  // 主进程拥有两条队列，因此负责释放半初始化资源。
         if (!cleanup_error.empty()) {
             error += "; request queue cleanup failed: " + cleanup_error;
         }
@@ -36,7 +36,7 @@ IpcResult IpcQueueManager::close(std::string& error) noexcept {
     std::string request_error;
     std::string reply_error;
 
-    const auto request_result = request_queue_.remove(request_error);
+    const auto request_result = request_queue_.remove(request_error);  // 即使 Request 删除失败也继续清理 Reply。
     if (request_result != IpcResult::Ok) {
         result = request_result;
     }

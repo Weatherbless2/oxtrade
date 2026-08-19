@@ -19,8 +19,8 @@ public:
     IpcQueueManager(const IpcQueueManager&) = delete;
     IpcQueueManager& operator=(const IpcQueueManager&) = delete;
 
-    IpcResult open(const IpcQueueOptions& options, std::string& error);
-    IpcResult close(std::string& error) noexcept;
+    IpcResult open(const IpcQueueOptions& options, std::string& error);  // 先 Request 后 Reply，后者失败会回滚前者。
+    IpcResult close(std::string& error) noexcept;  // 主进程统一删除两条队列并合并清理错误。
 
     bool is_open() const noexcept;
     SystemVMessageQueue& request_queue() noexcept;

@@ -14,6 +14,7 @@ namespace oxmbs::ipc {
 namespace {
 
 IpcResult map_errno(int error_number) noexcept {
+    // 把 Linux errno 转为业务层稳定状态，调用方不需要依赖平台宏判断每个错误。
     switch (error_number) {
     case EINTR:
         return IpcResult::Interrupted;
@@ -70,7 +71,7 @@ const char* ipc_result_name(IpcResult result) noexcept {
 
 SystemVMessageQueue::~SystemVMessageQueue() {
     std::string ignored;
-    remove(ignored);
+    remove(ignored);  // 队列对象拥有内核资源；析构时兜底删除，正常流程仍由 manager 显式 close。
 }
 
 SystemVMessageQueue::SystemVMessageQueue(SystemVMessageQueue&& other) noexcept
@@ -93,13 +94,13 @@ IpcResult SystemVMessageQueue::create(const QueueOptions& options, std::string& 
     }
 
 #if defined(__linux__)
-    const int queue_id = ::msgget(IPC_PRIVATE, IPC_CREAT | options.permissions);
+    const int queue_id = ::msgget(IPC_PRIVATE, IPC_CREAT | options.permissions);  // IPC_PRIVATE 保证每次创建独立队列。
     if (queue_id < 0) {
         error = system_error("msgget", errno);
         return map_errno(errno);
     }
 
-    struct msqid_ds status {};
+    struct msqid_ds status {};  // 先读取内核默认属性，再尝试设置目标容量。
     if (::msgctl(queue_id, IPC_STAT, &status) < 0) {
         error = system_error("msgctl(IPC_STAT)", errno);
         ::msgctl(queue_id, IPC_RMID, nullptr);
@@ -114,7 +115,7 @@ IpcResult SystemVMessageQueue::create(const QueueOptions& options, std::string& 
         return map_errno(errno);
     }
 
-    id_ = queue_id;
+    id_ = queue_id;  // 只有属性初始化完成后才对外暴露有效 id。
     max_bytes_ = status.msg_qbytes;
     return IpcResult::Ok;
 #else
@@ -135,11 +136,12 @@ IpcResult SystemVMessageQueue::send(long message_type,
     }
 
 #if defined(__linux__)
+    // System V 要求内存首部为 long mtype，但 msgsz 只计算正文；封装层隐藏这个 ABI 细节。
     std::vector<unsigned char> message(sizeof(long) + size);
     std::memcpy(message.data(), &message_type, sizeof(message_type));
     std::memcpy(message.data() + sizeof(message_type), data, size);
     const auto flags = non_blocking ? IPC_NOWAIT : 0;
-    if (::msgsnd(id_, message.data(), size, flags) < 0) {
+    if (::msgsnd(id_, message.data(), size, flags) < 0) {  // 阻塞模式下队列满会等待，非阻塞模式返回 WouldBlock。
         error = system_error("msgsnd", errno);
         return map_errno(errno);
     }
@@ -173,7 +175,7 @@ ReceiveResult SystemVMessageQueue::receive(long message_type,
 #if defined(__linux__)
     std::vector<unsigned char> message(sizeof(long) + capacity);
     const auto flags = non_blocking ? IPC_NOWAIT : 0;
-    const auto received = ::msgrcv(id_, message.data(), capacity, message_type, flags);
+    const auto received = ::msgrcv(id_, message.data(), capacity, message_type, flags);  // 空队列阻塞等待，删除队列返回 EIDRM。
     if (received < 0) {
         result.result = map_errno(errno);
         result.error = system_error("msgrcv", errno);
@@ -182,7 +184,7 @@ ReceiveResult SystemVMessageQueue::receive(long message_type,
     result.result = IpcResult::Ok;
     result.size = static_cast<std::size_t>(received);
     std::memcpy(&result.message_type, message.data(), sizeof(result.message_type));
-    std::memcpy(buffer, message.data() + sizeof(long), result.size);
+    std::memcpy(buffer, message.data() + sizeof(long), result.size);  // 只把正文复制给业务，避免暴露 mtype 内存布局。
     return result;
 #else
     (void)message_type;
@@ -205,7 +207,7 @@ IpcResult SystemVMessageQueue::remove(std::string& error) noexcept {
     const int queue_id = id_;
     id_ = -1;
     max_bytes_ = 0;
-    if (::msgctl(queue_id, IPC_RMID, nullptr) < 0) {
+    if (::msgctl(queue_id, IPC_RMID, nullptr) < 0) {  // 删除会同时唤醒正在 msgrcv 等待的 Worker。
         if (errno == EIDRM || errno == EINVAL) {
             return IpcResult::Ok;
         }
