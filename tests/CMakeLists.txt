@@ -13,3 +13,11 @@ add_executable(oxmbs_config_logging_test
 target_link_libraries(oxmbs_config_logging_test PRIVATE oxmbs_core)
 
 add_test(NAME oxmbs_config_logging_test COMMAND oxmbs_config_logging_test)
+
+add_executable(oxapp_worker_supervisor_test
+    test_worker_supervisor.cpp
+)
+
+target_link_libraries(oxapp_worker_supervisor_test PRIVATE oxapp_core)
+
+add_test(NAME oxapp_worker_supervisor_test COMMAND oxapp_worker_supervisor_test)
