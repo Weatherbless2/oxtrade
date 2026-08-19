@@ -10,6 +10,8 @@ include(CTest)
 
 add_library(oxapp_core
     src/oxapp/application.cpp
+    src/oxapp/process/worker_process.cpp
+    src/oxapp/process/worker_supervisor.cpp
 )
 
 target_include_directories(oxapp_core
