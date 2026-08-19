@@ -21,3 +21,11 @@ add_executable(oxapp_worker_supervisor_test
 target_link_libraries(oxapp_worker_supervisor_test PRIVATE oxapp_core)
 
 add_test(NAME oxapp_worker_supervisor_test COMMAND oxapp_worker_supervisor_test)
+
+add_executable(oxmbs_systemv_ipc_test
+    test_systemv_ipc.cpp
+)
+
+target_link_libraries(oxmbs_systemv_ipc_test PRIVATE oxmbs_core)
+
+add_test(NAME oxmbs_systemv_ipc_test COMMAND oxmbs_systemv_ipc_test)
