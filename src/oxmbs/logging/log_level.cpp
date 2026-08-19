@@ -8,6 +8,7 @@ namespace oxmbs::logging {
 namespace {
 
 std::string upper(std::string value) {
+    // 配置文本统一转大写，使 debug、Debug、DEBUG 都能得到同一枚举。
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
         return static_cast<char>(std::toupper(ch));
     });
@@ -17,7 +18,7 @@ std::string upper(std::string value) {
 }  // namespace
 
 const char* log_level_name(LogLevel level) noexcept {
-    switch (level) {
+    switch (level) {  // 日志行需要稳定文本，而不是依赖枚举底层整数值。
     case LogLevel::Debug:
         return "DEBUG";
     case LogLevel::Info:
@@ -31,7 +32,7 @@ const char* log_level_name(LogLevel level) noexcept {
 }
 
 bool parse_log_level(std::string_view value, LogLevel& level) noexcept {
-    const std::string normalized = upper(std::string(value));
+    const std::string normalized = upper(std::string(value));  // string_view 转为可修改字符串后规范化。
     if (normalized == "DEBUG") {
         level = LogLevel::Debug;
     } else if (normalized == "INFO") {

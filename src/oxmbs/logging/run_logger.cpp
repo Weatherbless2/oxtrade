@@ -18,7 +18,7 @@ namespace oxmbs::logging {
 namespace {
 
 std::string timestamp(std::chrono::system_clock::time_point now, bool with_milliseconds) {
-    const auto time = std::chrono::system_clock::to_time_t(now);
+    const auto time = std::chrono::system_clock::to_time_t(now);  // 将时间点转换为本地日历时间。
     const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
                                   now.time_since_epoch()) % 1000;
     std::tm local_time{};
@@ -28,7 +28,7 @@ std::string timestamp(std::chrono::system_clock::time_point now, bool with_milli
     localtime_r(&time, &local_time);
 #endif
     std::ostringstream output;
-    output << std::put_time(&local_time, with_milliseconds ? "%Y%m%d %H%M%S" : "%Y%m%d_%H%M%S");
+    output << std::put_time(&local_time, with_milliseconds ? "%Y%m%d %H%M%S" : "%Y%m%d_%H%M%S");  // 文件名和日志正文使用不同分隔符。
     if (with_milliseconds) {
         output << std::setfill('0') << std::setw(3) << milliseconds.count();
     }
@@ -57,9 +57,9 @@ std::uint64_t thread_id() noexcept {
 
 std::filesystem::path unique_log_path(const std::filesystem::path& directory,
                                       const std::string& service_name) {
-    const auto base = service_name + "_" + timestamp(std::chrono::system_clock::now(), false);
+    const auto base = service_name + "_" + timestamp(std::chrono::system_clock::now(), false);  // 每次 open() 生成时间前缀。
     auto candidate = directory / (base + ".log");
-    for (unsigned int suffix = 1; std::filesystem::exists(candidate); ++suffix) {
+    for (unsigned int suffix = 1; std::filesystem::exists(candidate); ++suffix) {  // 同一秒多次启动时追加序号避免覆盖。
         candidate = directory / (base + "_" + std::to_string(suffix) + ".log");
     }
     return candidate;
@@ -72,14 +72,14 @@ RunLogger::~RunLogger() {
 }
 
 bool RunLogger::open(const RunLoggerOptions& options, std::string& error) {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(mutex_);  // open/close/log 共享同一把锁，保证流状态一致。
     if (options.directory.empty() || options.service_name.empty()) {
         error = "logger directory and service name must not be empty";
         return false;
     }
 
     std::error_code filesystem_error;
-    std::filesystem::create_directories(options.directory, filesystem_error);
+    std::filesystem::create_directories(options.directory, filesystem_error);  // 允许日志目录首次运行时不存在。
     if (filesystem_error) {
         error = "cannot create log directory '" + options.directory.string() + "': " +
                 filesystem_error.message();
@@ -87,12 +87,12 @@ bool RunLogger::open(const RunLoggerOptions& options, std::string& error) {
     }
 
     const auto candidate = unique_log_path(options.directory, options.service_name);
-    stream_.open(candidate, std::ios::out | std::ios::app);
+    stream_.open(candidate, std::ios::out | std::ios::app);  // 追加打开，保留同一路径已有内容。
     if (!stream_) {
         error = "cannot open run log '" + candidate.string() + "'";
         return false;
     }
-    log_path_ = candidate;
+    log_path_ = candidate;  // 先保存实际选择的路径，测试和调用方可查询。
     service_name_ = options.service_name;
     minimum_level_ = options.minimum_level;
     mirror_stdout_ = options.mirror_stdout;
@@ -108,23 +108,23 @@ void RunLogger::close() noexcept {
 }
 
 void RunLogger::log(LogLevel level, std::string_view message) {
-    std::lock_guard lock(mutex_);
-    if (!stream_.is_open() || static_cast<int>(level) < static_cast<int>(minimum_level_)) {
+    std::lock_guard lock(mutex_);  // 锁覆盖过滤和写出，保证同一行不会被并发交错。
+    if (!stream_.is_open() || static_cast<int>(level) < static_cast<int>(minimum_level_)) {  // 未打开或级别过低时丢弃。
         return;
     }
     write_locked(level, message);
 }
 
 void RunLogger::write_locked(LogLevel level, std::string_view message) {
-    std::ostringstream line;
+    std::ostringstream line;  // 先组装完整行，再一次写文件和 stdout。
     line << timestamp(std::chrono::system_clock::now(), true)
          << "|[" << std::setfill('0') << std::setw(5) << process_id()
          << "][" << std::setfill('0') << std::setw(6) << (thread_id() % 1000000)
          << "][" << service_name_ << "][" << log_level_name(level) << "]: " << message;
-    stream_ << line.str() << '\n';
-    stream_.flush();
+    stream_ << line.str() << '\n';  // 文件格式包含时间、PID、TID、模块、级别和消息。
+    stream_.flush();  // run 日志强调进程异常时也尽量保留最新记录。
     if (mirror_stdout_) {
-        std::cout << line.str() << '\n';
+        std::cout << line.str() << '\n';  // 标准输出供 docker logs 或本地终端实时查看。
         std::cout.flush();
     }
 }
