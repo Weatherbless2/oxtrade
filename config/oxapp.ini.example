@@ -1,0 +1,11 @@
+[app]
+name=oxApp
+version=0.1.0
+log_level=INFO
+
+[server]
+host=127.0.0.1
+port=18080
+
+[log]
+directory=logs

@@ -1,0 +1,19 @@
+# Build and test output
+/build/
+/out/
+/Testing/
+
+# Runtime output and local configuration
+/logs/
+/config/oxapp.ini
+*.log
+
+# IDE and editor files
+/.vscode/
+/.idea/
+*.user
+*.swp
+
+# Operating system files
+.DS_Store
+Thumbs.db

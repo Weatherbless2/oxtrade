@@ -1,0 +1,6 @@
+#pragma once
+
+#define OXAPP_VERSION_MAJOR 0
+#define OXAPP_VERSION_MINOR 1
+#define OXAPP_VERSION_PATCH 0
+#define OXAPP_VERSION_STRING "0.1.0"
