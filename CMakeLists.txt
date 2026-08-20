@@ -18,6 +18,8 @@ add_library(oxmbs_core
     src/oxmbs/config/mbs_config.cpp
     src/oxmbs/ipc/systemv_message_queue.cpp
     src/oxmbs/ipc/ipc_queue_manager.cpp
+    src/oxmbs/ipc/task_protocol.cpp
+    src/oxmbs/ipc/task_correlation.cpp
     src/oxmbs/logging/log_level.cpp
     src/oxmbs/logging/run_logger.cpp
     src/oxmbs/runtime/system_info.cpp

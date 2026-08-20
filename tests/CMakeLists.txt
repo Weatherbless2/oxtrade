@@ -29,3 +29,11 @@ add_executable(oxmbs_systemv_ipc_test
 target_link_libraries(oxmbs_systemv_ipc_test PRIVATE oxmbs_core)
 
 add_test(NAME oxmbs_systemv_ipc_test COMMAND oxmbs_systemv_ipc_test)
+
+add_executable(oxmbs_task_protocol_test
+    test_task_protocol.cpp
+)
+
+target_link_libraries(oxmbs_task_protocol_test PRIVATE oxmbs_core)
+
+add_test(NAME oxmbs_task_protocol_test COMMAND oxmbs_task_protocol_test)
