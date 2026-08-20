@@ -5,6 +5,8 @@
 本工单为 oxMBS/oxServer 增加 Linux/WSL 下的查询 Worker 进程生命周期管理。
 Worker 当前只提供可运行的进程骨架，后续由 IPC 和业务执行工单接入请求处理。
 
+工单 #7 已在该基础上新增 `WorkerEntryWithContext`：Supervisor 可以把由主进程持有的 `QueryWorkerRuntime` 作为借用上下文传给同质子进程。该扩展不改变 #2 的 PID、重启和停止语义，也不把 System V 队列的删除责任交给 Worker。
+
 本工单实现：
 
 - Supervisor 创建指定数量的同质 Query Worker；

@@ -5,6 +5,11 @@ namespace oxapp::process {
 WorkerSupervisor::WorkerSupervisor(std::size_t desired_count, WorkerEntry entry)
     : desired_count_(desired_count), entry_(entry) {}  // 只保存配置，实际 Worker 在 start() 中创建。
 
+WorkerSupervisor::WorkerSupervisor(std::size_t desired_count,
+                                   WorkerEntryWithContext entry,
+                                   void* entry_context)
+    : desired_count_(desired_count), context_entry_(entry), entry_context_(entry_context) {}  // 所有同质 Worker 复用同一借用上下文，不能在 Supervisor 内部 delete。
+
 WorkerSupervisor::~WorkerSupervisor() {
     stop();
 }
@@ -16,7 +21,11 @@ bool WorkerSupervisor::start() {
 
     if (workers_.empty()) {  // 只在首次启动时创建对象，后续重启复用原有逻辑编号。
         for (std::size_t worker_id = 0; worker_id < desired_count_; ++worker_id) {
-            workers_.emplace_back(worker_id, entry_);  // 每个 Worker 使用相同入口，但拥有独立 PID。
+            if (context_entry_ != nullptr) {
+                workers_.emplace_back(worker_id, context_entry_, entry_context_);  // #7 子进程继承同一队列句柄，但每个 Worker 仍有独立 PID。
+            } else {
+                workers_.emplace_back(worker_id, entry_);  // 工单二兼容路径：每个 Worker 使用相同无参入口。
+            }
         }
     }
 

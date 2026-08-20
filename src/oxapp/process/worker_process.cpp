@@ -30,6 +30,17 @@ void install_worker_signal_handlers() noexcept {
     sigaction(SIGTERM, &action, nullptr);  // 支持 supervisor 的优雅停止方式。
 }
 
+void reset_context_worker_signal_handlers() noexcept {
+    // 主进程的服务停止处理器可能在 Worker 重启前已安装；Query Worker 不共享主进程循环标志，必须恢复默认信号语义，
+    // 这样 Supervisor 的 SIGTERM 才能可靠结束阻塞 msgrcv 的子进程，而不是仅返回 EINTR 后继续循环。
+    struct sigaction action {};
+    action.sa_handler = SIG_DFL;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    sigaction(SIGINT, &action, nullptr);
+    sigaction(SIGTERM, &action, nullptr);
+}
+
 int default_worker_entry() noexcept {
     stop_requested = 0;  // fork 后重新初始化，避免继承父进程此前的停止状态。
     install_worker_signal_handlers();  // 默认 Worker 暂时没有业务循环，只等待停止信号。
@@ -68,6 +79,11 @@ const char* worker_state_name(WorkerState state) noexcept {
 WorkerProcess::WorkerProcess(std::size_t worker_id, WorkerEntry entry)
     : worker_id_(worker_id), entry_(entry) {}  // 只保存逻辑编号和入口，真正的 PID 在 start() 时产生。
 
+WorkerProcess::WorkerProcess(std::size_t worker_id,
+                             WorkerEntryWithContext entry,
+                             void* entry_context)
+    : worker_id_(worker_id), context_entry_(entry), entry_context_(entry_context) {}  // 子进程仅借用上下文；父进程管理其实际生命周期。
+
 WorkerProcess::~WorkerProcess() {
     stop();
 }
@@ -93,8 +109,12 @@ bool WorkerProcess::launch() {
     }
 
     if (child_pid == 0) {
-        const WorkerEntry worker_entry = entry_ != nullptr ? entry_ : default_worker_entry;  // 空入口使用占位 Worker。
-        const int exit_code = worker_entry();  // 子进程执行入口，不应回到父进程的管理逻辑。
+        if (context_entry_ != nullptr) {
+            reset_context_worker_signal_handlers();  // #7 Query Worker 先剥离主进程停止处理器，再进入可阻塞的 IPC 运行时。
+        }
+        const int exit_code = context_entry_ != nullptr
+                                  ? context_entry_(entry_context_)  // Query Worker 需要队列等运行时上下文，但不会取得其删除责任。
+                                  : (entry_ != nullptr ? entry_() : default_worker_entry());  // 保留工单二的无参入口和默认等待循环。
         _exit(exit_code < 0 ? 1 : exit_code > 255 ? 255 : exit_code);  // 退出码限制在 POSIX 的 0~255 范围。
     }
 

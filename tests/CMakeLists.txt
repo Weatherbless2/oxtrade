@@ -45,3 +45,11 @@ add_executable(oxmbs_workfunc_router_test
 target_link_libraries(oxmbs_workfunc_router_test PRIVATE oxmbs_core)
 
 add_test(NAME oxmbs_workfunc_router_test COMMAND oxmbs_workfunc_router_test)
+
+add_executable(oxmbs_query_worker_runtime_test
+    test_query_worker_runtime.cpp
+)
+
+target_link_libraries(oxmbs_query_worker_runtime_test PRIVATE oxmbs_core oxapp_core)
+
+add_test(NAME oxmbs_query_worker_runtime_test COMMAND oxmbs_query_worker_runtime_test)

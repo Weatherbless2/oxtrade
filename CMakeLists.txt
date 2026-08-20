@@ -22,6 +22,9 @@ add_library(oxmbs_core
     src/oxmbs/ipc/task_correlation.cpp
     src/oxmbs/routing/message_route_policy.cpp
     src/oxmbs/routing/workfunc_router.cpp
+    src/oxmbs/worker/query_worker_runtime.cpp
+    src/oxmbs/worker/mock_query_service.cpp
+    src/oxmbs/worker/reply_collector.cpp
     src/oxmbs/logging/log_level.cpp
     src/oxmbs/logging/run_logger.cpp
     src/oxmbs/runtime/system_info.cpp
@@ -59,7 +62,7 @@ add_executable(oxMbsBootstrap
     src/oxmbs/main.cpp
 )
 
-target_link_libraries(oxMbsBootstrap PRIVATE oxmbs_core)
+target_link_libraries(oxMbsBootstrap PRIVATE oxmbs_core oxapp_core)
 
 set_target_properties(oxMbsBootstrap PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

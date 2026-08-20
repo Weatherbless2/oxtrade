@@ -8,6 +8,7 @@ namespace oxapp::process {
 
 using ProcessId = std::int64_t;  // 统一保存进程 ID；用有符号类型是为了用 -1 表示“当前没有子进程”。
 using WorkerEntry = int (*)();  // 子进程启动后执行的函数；返回值会被转换为子进程退出码。
+using WorkerEntryWithContext = int (*)(void*);  // 需要运行时对象的 Worker 使用 C 风格上下文指针；父进程负责保证该对象存活到 Worker 停止。
 
 enum class WorkerState {
     Created,    // 对象已创建，但还没有调用 start()。
@@ -24,6 +25,9 @@ const char* worker_state_name(WorkerState state) noexcept;
 class WorkerProcess {
 public:
     explicit WorkerProcess(std::size_t worker_id, WorkerEntry entry = nullptr);
+    WorkerProcess(std::size_t worker_id,
+                  WorkerEntryWithContext entry,
+                  void* entry_context);  // #7 Query Worker 通过受控上下文取得队列借用引用，不转移 IPC 所有权。
     ~WorkerProcess();  // 析构前主动停止子进程，避免对象销毁后留下孤儿进程。
 
     WorkerProcess(const WorkerProcess&) = delete;
@@ -50,7 +54,9 @@ private:
     void record_exit(int status) noexcept;  // 将 waitpid 返回的原始状态拆解为可查询的退出信息。
 
     std::size_t worker_id_;
-    WorkerEntry entry_;  // 业务层注入的入口函数；为空时使用默认的信号等待循环。
+    WorkerEntry entry_{nullptr};  // 业务层注入的无参入口；为空时使用默认的信号等待循环。
+    WorkerEntryWithContext context_entry_{nullptr};  // 与 entry_ 二选一；存在时优先调用并传入 entry_context_。
+    void* entry_context_{nullptr};  // 只借用父进程长期持有的运行时对象；Worker 不释放也不修改对象所有权。
     ProcessId pid_{-1};  // 当前被监管子进程的系统 PID。
     WorkerState state_{WorkerState::Created};  // 新建对象的初始生命周期状态。
     std::size_t restart_count_{0};  // 每次 restart() 进入新 launch() 前递增。
