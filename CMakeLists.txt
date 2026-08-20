@@ -20,6 +20,8 @@ add_library(oxmbs_core
     src/oxmbs/ipc/ipc_queue_manager.cpp
     src/oxmbs/ipc/task_protocol.cpp
     src/oxmbs/ipc/task_correlation.cpp
+    src/oxmbs/routing/message_route_policy.cpp
+    src/oxmbs/routing/workfunc_router.cpp
     src/oxmbs/logging/log_level.cpp
     src/oxmbs/logging/run_logger.cpp
     src/oxmbs/runtime/system_info.cpp

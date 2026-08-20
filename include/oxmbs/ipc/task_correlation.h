@@ -15,6 +15,7 @@ namespace oxmbs::ipc {
 enum class TaskCorrelationStatus {
     Registered,        // 请求已拿到唯一 task_seq，并已写入主进程 pending_ 表。
     Matched,           // Reply 的 task_seq 和 session_id 都匹配，记录已被消费。
+    Cancelled,         // 请求尚未进入队列或已明确投递失败，主进程主动删除对应 pending_ 记录。
     InvalidArgument,   // 零会话、非正超时或零关联字段等输入不具备关联意义。
     UnknownTask,       // 未找到 task_seq，通常是重复 Reply、迟到清理或非本进程生成的帧。
     SessionMismatch,   // task_seq 存在但 Reply 会话不同，禁止把结果投递给错误客户端。
@@ -54,6 +55,9 @@ public:
                                       std::chrono::milliseconds timeout,
                                       Clock::time_point now = Clock::now(),
                                       WallClock::time_point wall_now = WallClock::now());  // 用 steady_clock 保护主进程本地超时，同时生成可序列化的 wall-clock deadline 给 Worker。
+    TaskCorrelationStatus cancel_request(TaskSequence task_seq,
+                                         SessionId session_id,
+                                         std::uint64_t deadline_unix_ms);  // 仅用于 Task 未成功投递时的回滚；三项全匹配才删除，不能误删后来复用或错误会话的任务。
     ResponseCorrelation resolve_response(const IpcRespMsg& response,
                                          Clock::time_point now = Clock::now());
                                          // 匹配成功即删除；错会话保留记录；未知/超时 Reply 不会被投递。

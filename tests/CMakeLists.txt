@@ -37,3 +37,11 @@ add_executable(oxmbs_task_protocol_test
 target_link_libraries(oxmbs_task_protocol_test PRIVATE oxmbs_core)
 
 add_test(NAME oxmbs_task_protocol_test COMMAND oxmbs_task_protocol_test)
+
+add_executable(oxmbs_workfunc_router_test
+    test_workfunc_router.cpp
+)
+
+target_link_libraries(oxmbs_workfunc_router_test PRIVATE oxmbs_core)
+
+add_test(NAME oxmbs_workfunc_router_test COMMAND oxmbs_workfunc_router_test)

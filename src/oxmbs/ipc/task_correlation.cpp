@@ -49,6 +49,30 @@ TaskRegistration TaskCorrelationRegistry::register_request(SessionId session_id,
     return registration;
 }
 
+TaskCorrelationStatus TaskCorrelationRegistry::cancel_request(TaskSequence task_seq,
+                                                               SessionId session_id,
+                                                               std::uint64_t deadline_unix_ms) {
+    // WorkFunc 在登记后才尝试编码和非阻塞入队；后续任一步失败都必须撤销 pending_，否则会生成从未发出的假超时任务。
+    if (task_seq == 0 || session_id == 0 || deadline_unix_ms == 0) {
+        return TaskCorrelationStatus::InvalidArgument;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);  // 与 Reply 回收共享临界区，避免投递失败回滚和真实 Reply 同时消费同一 task_seq。
+    const auto found = pending_.find(task_seq);
+    if (found == pending_.end()) {
+        return TaskCorrelationStatus::UnknownTask;
+    }
+    if (found->second.session_id != session_id) {
+        return TaskCorrelationStatus::SessionMismatch;  // 会话不一致时保留原记录，禁止错误路径删除其他客户端的请求。
+    }
+    if (found->second.deadline_unix_ms != deadline_unix_ms) {
+        return TaskCorrelationStatus::DeadlineMismatch;  // deadline 不一致说明调用方拿到的不是原注册凭据，不能删除。
+    }
+
+    pending_.erase(found);  // 只有 task_seq、会话和 deadline 三重匹配才撤销，之后同编号 Reply 会按 UnknownTask 丢弃。
+    return TaskCorrelationStatus::Cancelled;
+}
+
 ResponseCorrelation TaskCorrelationRegistry::resolve_response(const IpcRespMsg& response, Clock::time_point now) {
     // Reply 只在主进程匹配：Worker 透传 session_id，不能访问网络会话，也不共享 pending_ 内存。
     ResponseCorrelation correlation;
@@ -111,6 +135,8 @@ const char* task_correlation_status_name(TaskCorrelationStatus status) noexcept 
         return "Registered";
     case TaskCorrelationStatus::Matched:
         return "Matched";
+    case TaskCorrelationStatus::Cancelled:
+        return "Cancelled";
     case TaskCorrelationStatus::InvalidArgument:
         return "InvalidArgument";
     case TaskCorrelationStatus::UnknownTask:
