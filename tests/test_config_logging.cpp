@@ -39,6 +39,9 @@ std::string valid_config() {
            "query_worker_count=4\n"
            "shutdown_timeout_ms=2500\n"
            "\n"
+           "[lbm]\n"
+           "funclist_file=funclist.xml\n"
+           "\n"
            "[logging]\n"
            "directory=runtime-logs\n"
            "level=debug\n";
@@ -58,6 +61,7 @@ void test_valid_config() {
     assert(config.listen_port == 19001);
     assert(config.query_worker_count == 4);
     assert(config.shutdown_timeout_ms == 2500);
+    assert(config.funclist_path == directory / "funclist.xml");  // 相对 LBM 配置必须稳定锚定到 ini 文件目录。
     assert(config.log_directory == "runtime-logs");
     assert(config.log_level == oxmbs::logging::LogLevel::Debug);
     std::filesystem::remove_all(directory);

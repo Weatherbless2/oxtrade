@@ -63,6 +63,9 @@ bool is_known_key(std::string_view section, std::string_view key) {
     if (section == "worker") {
         return key == "query_worker_count" || key == "shutdown_timeout_ms";
     }
+    if (section == "lbm") {
+        return key == "funclist_file";
+    }
     if (section == "logging") {
         return key == "directory" || key == "level";
     }
@@ -79,7 +82,7 @@ bool validate(const MbsConfig& config,
     static constexpr std::string_view required[] = {  // 所有字段都必须显式出现，避免依赖默认值误启动。
         "service.name", "service.environment", "server.host", "server.port",
         "worker.query_worker_count", "worker.shutdown_timeout_ms", "logging.directory",
-        "logging.level",
+        "logging.level", "lbm.funclist_file",
     };
     for (const auto key : required) {
         if (!has_key(seen, key)) {
@@ -89,7 +92,7 @@ bool validate(const MbsConfig& config,
     }
 
     if (config.service_name.empty() || config.environment.empty() ||
-        config.listen_host.empty() || config.log_directory.empty()) {
+        config.listen_host.empty() || config.funclist_path.empty() || config.log_directory.empty()) {
         error = "required string value is empty";
         return false;
     }
@@ -140,7 +143,7 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
             }
             section = lower(trim(value.substr(1, value.size() - 2)));  // 去括号并规范化大小写。
             if (section != "service" && section != "server" && section != "worker" &&
-                section != "logging") {
+                section != "lbm" && section != "logging") {
                 error = "line " + std::to_string(line_number) + ": unknown section '" + section + "'";
                 return false;
             }
@@ -191,6 +194,11 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
                 return false;
             }
             candidate.shutdown_timeout_ms = static_cast<std::uint32_t>(parsed);  // 范围确认后转换为毫秒字段。
+        } else if (section == "lbm" && key == "funclist_file") {
+            const std::filesystem::path configured_path = parsed_value;
+            candidate.funclist_path = configured_path.is_absolute()
+                                          ? configured_path.lexically_normal()
+                                          : (path.parent_path() / configured_path).lexically_normal();  // 配置引用以配置文件目录为基准，避免服务 cwd 改变后加载错误 XML。
         } else if (section == "logging" && key == "directory") {
             candidate.log_directory = parsed_value;
         } else if (section == "logging" && key == "level") {

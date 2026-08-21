@@ -53,3 +53,27 @@ add_executable(oxmbs_query_worker_runtime_test
 target_link_libraries(oxmbs_query_worker_runtime_test PRIVATE oxmbs_core oxapp_core)
 
 add_test(NAME oxmbs_query_worker_runtime_test COMMAND oxmbs_query_worker_runtime_test)
+
+if(UNIX)
+    add_library(oxmbs_lbm_test_module SHARED
+        lbm_test_module.cpp
+    )
+
+    target_include_directories(oxmbs_lbm_test_module PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_compile_features(oxmbs_lbm_test_module PRIVATE cxx_std_17)
+
+    add_executable(oxmbs_lbm_loader_test
+        test_lbm_loader.cpp
+    )
+
+    target_link_libraries(oxmbs_lbm_loader_test PRIVATE oxmbs_core oxapp_core)
+    target_compile_definitions(oxmbs_lbm_loader_test PRIVATE
+        OXMBS_LBM_TEST_LIBRARY="$<TARGET_FILE:oxmbs_lbm_test_module>"
+    )
+    add_dependencies(oxmbs_lbm_loader_test oxmbs_lbm_test_module)  # 测试运行前先保证 mock .so 已生成。
+
+    add_test(NAME oxmbs_lbm_loader_test COMMAND oxmbs_lbm_loader_test)
+endif()

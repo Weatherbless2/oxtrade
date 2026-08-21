@@ -16,6 +16,7 @@ struct MbsConfig {
     std::uint16_t listen_port{0};  // 网络端口，解析时限制在 1~65535。
     std::size_t query_worker_count{0};  // 查询类 Worker 的目标数量，解析时限制在 1~128。
     std::uint32_t shutdown_timeout_ms{0};  // 停止 Worker 的超时时间，单位为毫秒。
+    std::filesystem::path funclist_path;  // LBM 路由 XML；相对路径按 mbsconfig.ini 所在目录解析。
     std::filesystem::path log_directory;  // run 日志目录，不存在时由日志器创建。
     logging::LogLevel log_level{logging::LogLevel::Info};  // 日志最低输出级别，默认 INFO。
 };

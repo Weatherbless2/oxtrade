@@ -18,8 +18,9 @@ struct MockQueryExecutionResult {
     ipc::IpcPayload payload;  // 成功数据或错误说明的原始字节；Worker 不假定 JSON、文本或数据库行结构。
 };
 
-using QueryTaskHandler = MockQueryExecutionResult (*)(const ipc::IpcTaskMsg& task,
-                                                       void* context);  // 暂定 C 风格业务入口和上下文；#8 可由 LBM 函数指针/模块上下文适配替换。
+using QueryExecutionResult = MockQueryExecutionResult;  // #8 起作为通用 Worker 执行结果，保留旧类型名兼容既有 Mock 测试。
+using QueryTaskHandler = QueryExecutionResult (*)(const ipc::IpcTaskMsg& task,
+                                                   void* context);  // LBM 适配器只替换实现，不改变 Worker 的协议和生命周期边界。
 
 enum class QueryWorkerStepStatus {
     ResponseSent,          // 未过期任务已执行，Response 成功写入 Reply Queue。

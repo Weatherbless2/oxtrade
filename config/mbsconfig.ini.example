@@ -10,6 +10,9 @@ port=18080
 query_worker_count=2
 shutdown_timeout_ms=1000
 
+[lbm]
+funclist_file=funclist.xml.example
+
 [logging]
 directory=logs
 level=INFO

@@ -28,6 +28,10 @@ add_library(oxmbs_core
     src/oxmbs/logging/log_level.cpp
     src/oxmbs/logging/run_logger.cpp
     src/oxmbs/runtime/system_info.cpp
+    src/oxmbs/lbm/lbm_abi.cpp
+    src/oxmbs/lbm/funclist_registry.cpp
+    src/oxmbs/lbm/lbm_module_loader.cpp
+    src/oxmbs/lbm/lbm_task_dispatcher.cpp
 )
 
 target_include_directories(oxapp_core
@@ -43,6 +47,9 @@ target_include_directories(oxmbs_core
 )
 
 target_compile_features(oxmbs_core PUBLIC cxx_std_17)
+
+# LBM 在 Linux/WSL 通过 dlopen/dlsym 延迟加载；CMake 负责在需要的平台传递 libdl。
+target_link_libraries(oxmbs_core PUBLIC ${CMAKE_DL_LIBS})
 
 if(MSVC)
     target_compile_options(oxapp_core PRIVATE /W4 /permissive-)

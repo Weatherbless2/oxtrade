@@ -1,6 +1,7 @@
 #include "oxmbs/config/mbs_config.h"
 #include "oxmbs/ipc/ipc_queue_manager.h"
 #include "oxmbs/logging/run_logger.h"
+#include "oxmbs/lbm/lbm_task_dispatcher.h"
 #include "oxmbs/runtime/system_info.h"
 #include "oxmbs/worker/query_worker_runtime.h"
 #include "oxmbs/worker/reply_collector.h"
@@ -89,6 +90,17 @@ int main(int argc, char** argv) {
     logger.info("disk_total_bytes=" + std::to_string(system_info.disk_total_bytes) +
                 ", disk_available_bytes=" + std::to_string(system_info.disk_available_bytes));
 
+    oxmbs::lbm::LbmTaskDispatcher lbm_dispatcher;
+    const auto funclist_result = lbm_dispatcher.load_funclist(config.funclist_path);
+    if (!funclist_result) {
+        logger.error("cannot load LBM funclist: status=" +
+                     std::string(oxmbs::lbm::funclist_status_name(funclist_result.status)) +
+                     " error=" + funclist_result.error);
+        return 1;  // XML 路由不完整时不能启动 Worker，避免低频请求被默认 Mock 或未知函数处理。
+    }
+    logger.info("LBM funclist loaded; path=" + config.funclist_path.string() +
+                " routes=" + std::to_string(lbm_dispatcher.loader().configured_route_count()));
+
     oxmbs::ipc::IpcQueueManager queue_manager;
     if (queue_manager.open(default_ipc_queue_options(), error) != oxmbs::ipc::IpcResult::Ok) {
         logger.error("cannot create IPC queues: " + error);
@@ -97,7 +109,8 @@ int main(int argc, char** argv) {
 
     oxmbs::ipc::TaskCorrelationRegistry correlation_registry;
     oxmbs::worker::QueryWorkerRuntime worker_runtime(
-        queue_manager.request_queue(), queue_manager.reply_queue(), {}, nullptr, nullptr, &logger);  // 默认回显 Mock Handler 仅用于基础设施运行；真实 LBM 在 #8 注入。
+        queue_manager.request_queue(), queue_manager.reply_queue(), {},
+        &oxmbs::lbm::LbmTaskDispatcher::handle, &lbm_dispatcher, &logger);  // 仅在 Worker 内按 XML 懒加载 LBM；主进程继续只负责 IPC、监管和回包。
     oxapp::process::WorkerSupervisor supervisor(
         config.query_worker_count, &oxmbs::worker::query_worker_runtime_entry, &worker_runtime);
     if (!supervisor.start()) {

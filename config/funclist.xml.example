@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 仅为路由格式示例；真实环境应替换为 Mentor 确认的消息枚举和部署后的 LBM 路径。 -->
+<funclist>
+    <function msg_type="9001" func_id="42" library="./lbm/lbm_sys.so" symbol="oxmbs_lbm_sys_execute" />
+</funclist>
