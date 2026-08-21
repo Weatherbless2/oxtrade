@@ -127,8 +127,8 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
     std::string section;  // 当前 section，例如 service、server、worker 或 logging。
     std::string line;
     std::size_t line_number = 0;  // 所有语法错误都带行号，方便定位配置问题。
-    while (std::getline(stream, line)) {
-        ++line_number;
+    while (std::getline(stream, line)) {  // 逐行消费 ini；每行只影响候选 config，不直接修改正在运行的配置。
+        ++line_number;  // 保存原始行号，后续错误可以准确告诉维护者哪一行阻止启动。
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
@@ -136,12 +136,12 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
         if (value.empty() || value.front() == '#' || value.front() == ';') {  // 空行和两种注释风格直接跳过。
             continue;
         }
-        if (value.front() == '[') {  // section 行必须形如 [section]。
+        if (value.front() == '[') {  // section 行必须形如 [section]，后续键名解释依赖当前段。
             if (value.size() < 3 || value.back() != ']') {
                 error = "line " + std::to_string(line_number) + ": invalid section";
                 return false;
             }
-            section = lower(trim(value.substr(1, value.size() - 2)));  // 去括号并规范化大小写。
+            section = lower(trim(value.substr(1, value.size() - 2)));  // 去括号并统一小写，保证 [LBM] 与 [lbm] 行为一致。
             if (section != "service" && section != "server" && section != "worker" &&
                 section != "lbm" && section != "logging") {
                 error = "line " + std::to_string(line_number) + ": unknown section '" + section + "'";
@@ -150,7 +150,7 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
             continue;
         }
 
-        const auto separator = value.find('=');  // 当前实现只把第一个等号作为键值分隔符。
+        const auto separator = value.find('=');  // 第一个等号分开 key/value，value 内部的等号继续保留。
         if (section.empty() || separator == std::string::npos) {
             error = "line " + std::to_string(line_number) + ": expected section and key=value";
             return false;
@@ -167,8 +167,8 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
             return false;
         }
 
-        if (section == "service" && key == "name") {  // 字符串字段直接写入候选配置。
-            candidate.service_name = parsed_value;
+        if (section == "service" && key == "name") {  // 字符串字段直接写入候选配置，尚未成为运行时状态。
+            candidate.service_name = parsed_value;  // 后续日志器会使用这个服务名。
         } else if (section == "service" && key == "environment") {
             candidate.environment = parsed_value;
         } else if (section == "server" && key == "host") {
@@ -194,8 +194,8 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
                 return false;
             }
             candidate.shutdown_timeout_ms = static_cast<std::uint32_t>(parsed);  // 范围确认后转换为毫秒字段。
-        } else if (section == "lbm" && key == "funclist_file") {
-            const std::filesystem::path configured_path = parsed_value;
+        } else if (section == "lbm" && key == "funclist_file") {  // 工单 8 的入口字段决定后续加载哪张 LBM 路由表。
+            const std::filesystem::path configured_path = parsed_value;  // 先保留用户配置的原始相对/绝对路径语义。
             candidate.funclist_path = configured_path.is_absolute()
                                           ? configured_path.lexically_normal()
                                           : (path.parent_path() / configured_path).lexically_normal();  // 配置引用以配置文件目录为基准，避免服务 cwd 改变后加载错误 XML。
@@ -209,12 +209,12 @@ bool MbsConfigLoader::load(const std::filesystem::path& path,
         }
     }
 
-    if (!validate(candidate, seen, error)) {  // 语法解析成功不代表业务约束正确，还需统一校验。
-        return false;
+    if (!validate(candidate, seen, error)) {  // 语法解析成功不代表业务约束正确，还需统一校验必填字段和范围。
+        return false;  // 失败时保留调用方旧 config，主程序会记录错误并停止启动。
     }
 
-    config = std::move(candidate);  // 只有全部成功才替换调用方配置，避免半成品被使用。
-    return true;
+    config = std::move(candidate);  // 所有字段通过后一次性提交，避免半成品配置被 Logger/Worker 使用。
+    return true;  // main.cpp 收到 true 后才会打开日志、解析 funclist 和创建队列。
 }
 
 }  // namespace oxmbs::config

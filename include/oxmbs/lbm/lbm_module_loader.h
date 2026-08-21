@@ -45,8 +45,8 @@ public:
     LbmModuleLoader(const LbmModuleLoader&) = delete;
     LbmModuleLoader& operator=(const LbmModuleLoader&) = delete;
 
-    FunclistLoadResult load_funclist(const std::filesystem::path& path);  // 只解析映射，不预加载动态库。
-    LbmModuleResult execute(const ipc::IpcTaskMsg& task);
+    FunclistLoadResult load_funclist(const std::filesystem::path& path);  // 启动阶段读取 XML 并原子更新路由；不因配置读取而 dlopen。
+    LbmModuleResult execute(const ipc::IpcTaskMsg& task);  // 任务命中路由后懒加载库、调用函数，再复制出 Worker 自有结果。
 
     bool configuration_loaded() const noexcept;
     std::size_t configured_route_count() const noexcept;
@@ -56,7 +56,7 @@ public:
 private:
     struct CachedLibrary {
         void* native_handle{nullptr};  // 仅 Loader 拥有，析构时 dlclose。
-        std::map<std::string, LbmEntryPoint> functions;
+        std::map<std::string, LbmEntryPoint> functions;  // 一个库可缓存多个符号；函数指针有效期依赖 native_handle。
     };
 
     LbmModuleResult resolve_entry_point(const FunctionRoute& route, LbmEntryPoint& entry_point);

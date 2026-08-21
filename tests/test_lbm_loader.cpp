@@ -20,18 +20,18 @@ constexpr long kRequestMessageType = 71;  // System V mtype 与上面的业务 m
 constexpr long kReplyMessageType = 72;
 
 std::filesystem::path temporary_directory(const std::string& name) {
-    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();  // 用单调时钟生成隔离名，避免多个测试共享 XML/so 文件。
     const auto directory = std::filesystem::temp_directory_path() /
                            ("oxmbs_lbm_" + name + "_" + std::to_string(suffix));
-    std::filesystem::create_directories(directory);
-    return directory;
+    std::filesystem::create_directories(directory);  // 测试自己创建运行目录，结束时由该测试整体删除。
+    return directory;  // 返回路径供 XML、队列和动态库测试共同使用。
 }
 
 void write_file(const std::filesystem::path& path, const std::string& content) {
-    std::ofstream stream(path, std::ios::binary);
-    assert(stream);
-    stream << content;
-    assert(stream.good());
+    std::ofstream stream(path, std::ios::binary);  // 直接构造文件输入，模拟部署目录中的 ini/XML/路由文件。
+    assert(stream);  // 打不开说明测试环境准备失败，后续断言没有业务意义。
+    stream << content;  // 写入完整字节文本，不让测试依赖真实配置文件。
+    assert(stream.good());  // 确认写入成功，否则不能把失败归因到 Loader。
 }
 
 std::string xml_entry(std::uint32_t function_id, const std::string& symbol) {
@@ -92,8 +92,8 @@ oxmbs::worker::QueryWorkerRuntimeOptions worker_options() {
 void send_task(oxmbs::ipc::SystemVMessageQueue& queue, const oxmbs::ipc::IpcTaskMsg& task) {
     oxmbs::ipc::IpcPayload frame;
     std::string error;
-    assert(oxmbs::ipc::encode_task(task, frame, error) == oxmbs::ipc::TaskProtocolStatus::Ok);
-    assert(queue.send(kRequestMessageType, frame.data(), frame.size(), false, error) == oxmbs::ipc::IpcResult::Ok);
+    assert(oxmbs::ipc::encode_task(task, frame, error) == oxmbs::ipc::TaskProtocolStatus::Ok);  // 先把结构化任务编码成 IPC 字节帧，验证 LBM 前的协议边界。
+    assert(queue.send(kRequestMessageType, frame.data(), frame.size(), false, error) == oxmbs::ipc::IpcResult::Ok);  // 父进程把请求放入 Request Queue，Worker 随后阻塞取走。
 }
 
 void test_registry_validates_and_preserves_last_good_mapping() {
@@ -105,11 +105,11 @@ void test_registry_validates_and_preserves_last_good_mapping() {
                "</funclist>\n");
 
     oxmbs::lbm::FunclistRegistry registry;
-    assert(registry.load_from_file(valid_path));
-    const auto* route = registry.find(kMessageType, 41);
-    assert(route != nullptr);
-    assert(route->library_path == directory / "modules/lbm_test.so");  // XML 相对库路径只以 XML 所在目录解释。
-    assert(route->symbol == "entry");
+    assert(registry.load_from_file(valid_path));  // 合法 XML 才能成为活动路由表。
+    const auto* route = registry.find(kMessageType, 41);  // 用任务实际的两个编号查询，不依赖 XML 顺序。
+    assert(route != nullptr);  // 找不到说明路由键构建或解析失败。
+    assert(route->library_path == directory / "modules/lbm_test.so");  // 相对库路径只以 XML 所在目录解释，换 cwd 也不会漂移。
+    assert(route->symbol == "entry");  // 保存导出函数名，暂时不 dlopen，验证启动期懒加载边界。
 
     const auto duplicate_path = directory / "duplicate.xml";
     write_file(duplicate_path,
@@ -117,13 +117,13 @@ void test_registry_validates_and_preserves_last_good_mapping() {
                "  <function msg_type=\"9001\" func_id=\"41\" library=\"a.so\" symbol=\"a\" />\n"
                "  <function msg_type=\"9001\" func_id=\"41\" library=\"b.so\" symbol=\"b\" />\n"
                "</funclist>\n");
-    const auto duplicate = registry.load_from_file(duplicate_path);
-    assert(duplicate.status == oxmbs::lbm::FunclistStatus::DuplicateRoute);
+    const auto duplicate = registry.load_from_file(duplicate_path);  // 主动制造重复二元键，模拟配置人员复制路由的错误。
+    assert(duplicate.status == oxmbs::lbm::FunclistStatus::DuplicateRoute);  // 后一个条目不能覆盖前一个条目。
     assert(registry.size() == 1 && registry.find(kMessageType, 41) != nullptr);  // 错误重载不能破坏上一份已生效路由。
 
     const auto invalid_root_path = directory / "invalid_root.xml";
     write_file(invalid_root_path, "<funclist mode=\"unsafe\"></funclist>\n");
-    assert(registry.load_from_file(invalid_root_path).status == oxmbs::lbm::FunclistStatus::InvalidRoot);
+    assert(registry.load_from_file(invalid_root_path).status == oxmbs::lbm::FunclistStatus::InvalidRoot);  // 根节点带额外属性时必须在启动阶段拒绝。
     std::filesystem::remove_all(directory);
 }
 
@@ -132,37 +132,37 @@ void test_loader_lazily_caches_modules_and_reports_failures() {
     const auto funclist = write_valid_funclist(directory);
     oxmbs::lbm::LbmModuleLoader loader;
 
-    assert(loader.execute(make_task(41)).module_status == oxmbs::lbm::LbmModuleStatus::ConfigurationNotLoaded);
-    assert(loader.load_funclist(funclist));
-    assert(loader.configured_route_count() == 5);
+    assert(loader.execute(make_task(41)).module_status == oxmbs::lbm::LbmModuleStatus::ConfigurationNotLoaded);  // 故意跳过配置，确认 Loader 不会盲目加载任意模块。
+    assert(loader.load_funclist(funclist));  // 先加载路由白名单，后续任务才有资格进入动态加载。
+    assert(loader.configured_route_count() == 5);  // 五条路由都应进入候选表。
     assert(loader.loaded_library_count() == 0);  // 读取 XML 不得抢先 dlopen，模块必须由首个实际任务触发。
 
     const auto normal = loader.execute(make_task(41));
-    assert(normal.module_status == oxmbs::lbm::LbmModuleStatus::Ok);
-    assert(normal.response_status == oxmbs::ipc::IpcResponseStatus::Ok);
-    assert(std::string(normal.payload.begin(), normal.payload.end()) == "mock-lbm-ok");
-    assert(loader.loaded_library_count() == 1 && loader.cached_function_count() == 1);
+    assert(normal.module_status == oxmbs::lbm::LbmModuleStatus::Ok);  // 首次命中应完成 dlopen、dlsym 和模块调用。
+    assert(normal.response_status == oxmbs::ipc::IpcResponseStatus::Ok);  // 模块 Ok 被翻译成统一 IPC 成功状态。
+    assert(std::string(normal.payload.begin(), normal.payload.end()) == "mock-lbm-ok");  // 返回内容来自 Worker 提供的输出缓冲区。
+    assert(loader.loaded_library_count() == 1 && loader.cached_function_count() == 1);  // 首次调用后只产生一个库句柄和一个函数缓存。
 
     const auto repeated = loader.execute(make_task(41));
-    assert(repeated.module_status == oxmbs::lbm::LbmModuleStatus::Ok);
+    assert(repeated.module_status == oxmbs::lbm::LbmModuleStatus::Ok);  // 第二次调用验证缓存函数地址仍可复用。
     assert(loader.loaded_library_count() == 1 && loader.cached_function_count() == 1);  // 重复路由复用同一 .so 句柄与函数指针。
 
     const auto rejected = loader.execute(make_task(42));
-    assert(rejected.module_status == oxmbs::lbm::LbmModuleStatus::Ok);
-    assert(rejected.response_status == oxmbs::ipc::IpcResponseStatus::Rejected);
-    assert(loader.cached_function_count() == 2);
+    assert(rejected.module_status == oxmbs::lbm::LbmModuleStatus::Ok);  // 模块自身执行成功，但业务状态可以是 Rejected。
+    assert(rejected.response_status == oxmbs::ipc::IpcResponseStatus::Rejected);  // 拒绝不是动态加载失败，要保留业务语义。
+    assert(loader.cached_function_count() == 2);  // 同一 .so 的第二个符号加入函数缓存，共享一个库句柄。
 
-    assert(loader.execute(make_task(43)).module_status == oxmbs::lbm::LbmModuleStatus::InvalidModuleResponse);
-    assert(loader.execute(make_task(44)).module_status == oxmbs::lbm::LbmModuleStatus::InvocationFailed);
-    assert(loader.execute(make_task(45)).module_status == oxmbs::lbm::LbmModuleStatus::SymbolNotFound);
-    assert(loader.execute(make_task(99)).module_status == oxmbs::lbm::LbmModuleStatus::RouteNotFound);
+    assert(loader.execute(make_task(43)).module_status == oxmbs::lbm::LbmModuleStatus::InvalidModuleResponse);  // 故意伪造 ABI 版本，确认 Loader 拒绝不可信结果。
+    assert(loader.execute(make_task(44)).module_status == oxmbs::lbm::LbmModuleStatus::InvocationFailed);  // 故意返回非零，模拟模块内部业务/系统失败。
+    assert(loader.execute(make_task(45)).module_status == oxmbs::lbm::LbmModuleStatus::SymbolNotFound);  // 路由存在但导出函数不存在，不能调用空地址。
+    assert(loader.execute(make_task(99)).module_status == oxmbs::lbm::LbmModuleStatus::RouteNotFound);  // 未配置编号必须拒绝，不得猜测默认函数。
 
     const auto missing_library = directory / "missing_library.xml";
     write_file(missing_library,
                "<funclist><function msg_type=\"9001\" func_id=\"41\" library=\"missing.so\" symbol=\"entry\" /></funclist>");
     oxmbs::lbm::LbmModuleLoader missing_loader;
-    assert(missing_loader.load_funclist(missing_library));
-    assert(missing_loader.execute(make_task(41)).module_status == oxmbs::lbm::LbmModuleStatus::LibraryLoadFailed);
+    assert(missing_loader.load_funclist(missing_library));  // XML 结构合法，但把库文件故意指向不存在路径。
+    assert(missing_loader.execute(make_task(41)).module_status == oxmbs::lbm::LbmModuleStatus::LibraryLoadFailed);  // 失败应在首次实际命中时报告，而不是启动时误报。
     std::filesystem::remove_all(directory);
 }
 
@@ -170,30 +170,30 @@ void test_supervised_worker_dispatches_to_lbm_and_writes_response() {
     const auto directory = temporary_directory("worker");
     const auto funclist = write_valid_funclist(directory);
     oxmbs::lbm::LbmTaskDispatcher dispatcher;
-    assert(dispatcher.load_funclist(funclist));
+    assert(dispatcher.load_funclist(funclist));  // 父进程只先完成 XML 校验，动态库由 fork 后 Worker 首次任务触发。
 
     oxmbs::ipc::IpcQueueManager manager;
     std::string error;
-    assert(manager.open(queue_options(), error) == oxmbs::ipc::IpcResult::Ok);
+    assert(manager.open(queue_options(), error) == oxmbs::ipc::IpcResult::Ok);  // 创建真实双向 System V 队列，验证跨进程链路而非直接函数调用。
     oxmbs::worker::QueryWorkerRuntime runtime(
         manager.request_queue(), manager.reply_queue(), worker_options(),
         &oxmbs::lbm::LbmTaskDispatcher::handle, &dispatcher);  // Dispatcher 在 fork 前只加载 XML，子进程收到任务后才首次 dlopen。
     oxapp::process::WorkerSupervisor supervisor(1, &oxmbs::worker::query_worker_runtime_entry, &runtime);
-    assert(supervisor.start());
+    assert(supervisor.start());  // fork Worker；子进程接收 Request 后执行 Dispatcher。
 
     const auto task = make_task(41);
     send_task(manager.request_queue(), task);
     std::vector<std::uint8_t> buffer(4096);
     const auto received = manager.reply_queue().receive(kReplyMessageType, buffer.data(), buffer.size(), false);
-    assert(received);
-    const auto response = oxmbs::ipc::decode_response(buffer.data(), received.size);
-    assert(response);
-    assert(response.message.task_seq == task.task_seq && response.message.session_id == task.session_id);
-    assert(response.message.status == oxmbs::ipc::IpcResponseStatus::Ok);
-    assert(std::string(response.message.payload.begin(), response.message.payload.end()) == "mock-lbm-ok");
+    assert(received);  // 主进程阻塞等待 Reply Queue，收到的必须是对应 mtype 的完整帧。
+    const auto response = oxmbs::ipc::decode_response(buffer.data(), received.size);  // 按协议还原 Worker 发送的状态和字节正文。
+    assert(response);  // 解码失败说明 IPC 长度/布局或 Worker 编码有问题。
+    assert(response.message.task_seq == task.task_seq && response.message.session_id == task.session_id);  // 关联字段必须原样往返，防止串单。
+    assert(response.message.status == oxmbs::ipc::IpcResponseStatus::Ok);  // 端到端状态应保持模块成功语义。
+    assert(std::string(response.message.payload.begin(), response.message.payload.end()) == "mock-lbm-ok");  // 最终回包正文来自动态模块。
 
-    assert(supervisor.stop(std::chrono::milliseconds{500}));
-    assert(manager.close(error) == oxmbs::ipc::IpcResult::Ok);  // 父进程仍是唯一 System V 队列删除者。
+    assert(supervisor.stop(std::chrono::milliseconds{500}));  // 先停止 Worker，避免子进程继续访问即将删除的队列。
+    assert(manager.close(error) == oxmbs::ipc::IpcResult::Ok);  // 父进程仍是唯一 System V 队列删除者，测试结束不留内核资源。
     std::filesystem::remove_all(directory);
 }
 

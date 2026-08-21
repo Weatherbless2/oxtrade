@@ -59,20 +59,20 @@ QueryWorkerRuntime::QueryWorkerRuntime(ipc::SystemVMessageQueue& request_queue,
 }
 
 QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
-    QueryWorkerStepResult result;
-    if (!options_are_valid()) {
-        result.status = QueryWorkerStepStatus::RequestReceiveFailed;
-        result.ipc_result = ipc::IpcResult::InvalidArgument;
-        result.error = "QueryWorkerRuntime options are invalid";
-        log_error(result.error);
-        return result;
+    QueryWorkerStepResult result;  // 每次循环只保存一条任务的处理结果，run() 据此决定继续、退出或让 Supervisor 重启。
+    if (!options_are_valid()) {  // 先检查队列类型、协议帧上限和接收缓冲区，避免带着错误边界进入 msgrcv。
+        result.status = QueryWorkerStepStatus::RequestReceiveFailed;  // 配置错误属于不可恢复的 Worker 启动问题。
+        result.ipc_result = ipc::IpcResult::InvalidArgument;  // 用稳定 IPC 状态代替底层参数错误细节。
+        result.error = "QueryWorkerRuntime options are invalid";  // 主进程日志可据此定位 Worker 配置。
+        log_error(result.error);  // 记录后返回，由 run() 返回非零并交给 Supervisor 处理。
+        return result;  // 不创建应答，也不继续读取未知大小的请求。
     }
 
     const auto received = request_queue_.receive(
         options_.request_message_type, receive_buffer_.data(), receive_buffer_.size(), false);  // false 使同质 Worker 在空队列休眠，由内核唤醒一个消费者。
-    result.ipc_result = received.result;
+    result.ipc_result = received.result;  // 保存 msgrcv 的业务化结果，让调用方区分中断、删除和真正失败。
     if (!received) {
-        result.error = received.error;
+        result.error = received.error;  // 保留 errno 映射后的可读原因，后续日志不重新猜测。
         switch (received.result) {
         case ipc::IpcResult::Interrupted:
             result.status = QueryWorkerStepStatus::RequestInterrupted;
@@ -90,7 +90,7 @@ QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
         }
     }
 
-    const auto decoded = ipc::decode_task(receive_buffer_.data(), received.size, options_.protocol_limits);
+    const auto decoded = ipc::decode_task(receive_buffer_.data(), received.size, options_.protocol_limits);  // 只按 msgrcv 实际长度解码，避免把旧 buffer 尾部当成新字段。
     if (!decoded) {
         result.status = QueryWorkerStepStatus::InvalidTaskDropped;
         result.error = decoded.error;
@@ -99,8 +99,8 @@ QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
         return result;
     }
 
-    const auto& task = decoded.message;
-    result.task_seq = task.task_seq;
+    const auto& task = decoded.message;  // 解码对象引用当前 buffer 对应的结构化任务，不复制 payload。
+    result.task_seq = task.task_seq;  // 先保存序号，即使后面超时或业务失败，日志也能定位这条任务。
     if (task.deadline_unix_ms <= now_unix_ms()) {  // 先检查跨进程绝对 deadline；过期任务不能调用 Mock 业务，更不能伪造成功 Reply。
         result.status = QueryWorkerStepStatus::TaskExpiredDropped;
         log_warning("query worker dropped expired request " + task_context(task));
@@ -109,7 +109,7 @@ QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
 
     MockQueryExecutionResult execution;
     try {
-        execution = handler_(task, handler_context_);  // #7 临时 Mock 执行入口；#8 用 LBM 加载结果和模块上下文适配到同样的 Response status/payload。
+        execution = handler_(task, handler_context_);  // deadline 已通过后才进入 Dispatcher/LBM；返回统一 status 和自有 payload。
     } catch (const std::exception& exception) {
         execution.status = ipc::IpcResponseStatus::Failed;
         const std::string message = std::string("mock query handler exception: ") + exception.what();
@@ -122,18 +122,18 @@ QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
         log_warning("query worker handler unknown exception " + task_context(task));
     }
 
-    ipc::IpcRespMsg response;
-    response.task_seq = task.task_seq;
-    response.session_id = task.session_id;
-    response.deadline_unix_ms = task.deadline_unix_ms;
-    response.msg_type = task.msg_type;
-    response.func_id = task.func_id;
-    response.status = execution.status;
+    ipc::IpcRespMsg response;  // 新建应答对象，不能复用 Request 的可借用输入内存。
+    response.task_seq = task.task_seq;  // 原样回传任务序号，ReplyCollector 依靠它完成关联。
+    response.session_id = task.session_id;  // 原样回传会话号，避免不同会话串包。
+    response.deadline_unix_ms = task.deadline_unix_ms;  // 带回原 deadline，接收方可判断应答是否仍有意义。
+    response.msg_type = task.msg_type;  // 回包保留业务消息类型，便于上游按原协议分派。
+    response.func_id = task.func_id;  // 回包保留函数编号，便于诊断具体业务入口。
+    response.status = execution.status;  // LBM 的 Ok/Rejected/Failed 已在 Dispatcher 转成 IPC 状态。
     response.payload = std::move(execution.payload);  // 只移动 Worker 已拥有的业务结果，Request payload 不再引用主进程 buffer。
 
     ipc::IpcPayload frame;
     std::string error;
-    const auto encoding_result = ipc::encode_response(response, frame, error, options_.protocol_limits);
+    const auto encoding_result = ipc::encode_response(response, frame, error, options_.protocol_limits);  // 把结构化应答写成受限长度的 IPC 字节帧。
     if (encoding_result != ipc::TaskProtocolStatus::Ok) {
         result.status = QueryWorkerStepStatus::ResponseEncodingFailed;
         result.error = error;
@@ -144,7 +144,7 @@ QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
 
     const auto send_result = reply_queue_.send(
         options_.reply_message_type, frame.data(), frame.size(), false, error);  // Worker 可阻塞等待 Reply Queue 空间；这条低频路径不会阻塞 WorkFunc 或交易/行情链路。
-    result.ipc_result = send_result;
+    result.ipc_result = send_result;  // 保存 msgsnd 的业务化结果，run() 决定是正常退出还是异常退出。
     if (send_result != ipc::IpcResult::Ok) {
         result.error = error;
         result.status = send_result == ipc::IpcResult::QueueRemoved
@@ -155,10 +155,10 @@ QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
         return result;
     }
 
-    result.status = QueryWorkerStepStatus::ResponseSent;
-    result.response_status = response.status;
-    log_debug("query worker response sent " + task_context(task));
-    return result;
+    result.status = QueryWorkerStepStatus::ResponseSent;  // 只有 msgsnd 成功后才允许把本次任务标记为已完成。
+    result.response_status = response.status;  // 把实际业务状态交给监控和测试读取。
+    log_debug("query worker response sent " + task_context(task));  // 日志中的 task/session/msg/func 可与主进程回包对应。
+    return result;  // 返回 run()，下一轮继续消费下一条 Request。
 }
 
 int QueryWorkerRuntime::run() {
@@ -172,12 +172,12 @@ int QueryWorkerRuntime::run() {
         case QueryWorkerStepStatus::RequestInterrupted:
         case QueryWorkerStepStatus::ResponseEncodingFailed:
             continue;  // 单个任务/帧失败不应杀死整个 Worker，后续合法任务仍可被同质池消费。
-        case QueryWorkerStepStatus::RequestQueueRemoved:
-        case QueryWorkerStepStatus::ReplyQueueRemoved:
-            return 0;  // 主进程关闭 IPC 是正常停止路径；Worker 不负责 remove()。
+        case QueryWorkerStepStatus::RequestQueueRemoved:  // 主进程删除 Request 会唤醒阻塞 receive，这是正常停机信号。
+        case QueryWorkerStepStatus::ReplyQueueRemoved:  // Reply 被删除时发送端也应停止，不能继续访问失效队列。
+            return 0;  // 主进程关闭 IPC 是正常停止路径；Worker 不负责 remove()，避免多进程重复删除。
         case QueryWorkerStepStatus::RequestReceiveFailed:
         case QueryWorkerStepStatus::ReplySendFailed:
-            return 1;  // 不可恢复 IPC 错误让 #2 Supervisor 按异常退出路径重启 Worker。
+            return 1;  // 不可恢复 IPC 错误让 Supervisor 按异常退出路径重启 Worker，避免静默丢失后续任务。
         }
     }
 }

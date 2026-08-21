@@ -90,8 +90,8 @@ int main(int argc, char** argv) {
     logger.info("disk_total_bytes=" + std::to_string(system_info.disk_total_bytes) +
                 ", disk_available_bytes=" + std::to_string(system_info.disk_available_bytes));
 
-    oxmbs::lbm::LbmTaskDispatcher lbm_dispatcher;
-    const auto funclist_result = lbm_dispatcher.load_funclist(config.funclist_path);
+    oxmbs::lbm::LbmTaskDispatcher lbm_dispatcher;  // 主进程创建 Loader；fork 后 Worker 继承已校验路由但按需加载库。
+    const auto funclist_result = lbm_dispatcher.load_funclist(config.funclist_path);  // 启动期先保证 XML 可用，再允许任务进入。
     if (!funclist_result) {
         logger.error("cannot load LBM funclist: status=" +
                      std::string(oxmbs::lbm::funclist_status_name(funclist_result.status)) +
@@ -101,19 +101,19 @@ int main(int argc, char** argv) {
     logger.info("LBM funclist loaded; path=" + config.funclist_path.string() +
                 " routes=" + std::to_string(lbm_dispatcher.loader().configured_route_count()));
 
-    oxmbs::ipc::IpcQueueManager queue_manager;
+    oxmbs::ipc::IpcQueueManager queue_manager;  // 双队列仍由父进程独占创建和删除，LBM 不改变 IPC 所有权。
     if (queue_manager.open(default_ipc_queue_options(), error) != oxmbs::ipc::IpcResult::Ok) {
         logger.error("cannot create IPC queues: " + error);
         return 1;
     }
 
     oxmbs::ipc::TaskCorrelationRegistry correlation_registry;
-    oxmbs::worker::QueryWorkerRuntime worker_runtime(
+    oxmbs::worker::QueryWorkerRuntime worker_runtime(  // Worker 收到任务后才经 Dispatcher 首次触发 dlopen/dlsym。
         queue_manager.request_queue(), queue_manager.reply_queue(), {},
         &oxmbs::lbm::LbmTaskDispatcher::handle, &lbm_dispatcher, &logger);  // 仅在 Worker 内按 XML 懒加载 LBM；主进程继续只负责 IPC、监管和回包。
     oxapp::process::WorkerSupervisor supervisor(
         config.query_worker_count, &oxmbs::worker::query_worker_runtime_entry, &worker_runtime);
-    if (!supervisor.start()) {
+    if (!supervisor.start()) {  // fork/启动失败时不能留下已经创建的 System V 队列。
         logger.error("cannot start query worker supervisor");
         std::string close_error;
         queue_manager.close(close_error);  // 失败路径仍由主进程关闭双队列，避免 Worker 或内核残留资源。
@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
     oxmbs::worker::ReplyCollector reply_collector(
         queue_manager.reply_queue(), correlation_registry, {}, nullptr, nullptr, nullptr, nullptr, &logger);
     std::atomic<int> reply_collector_exit_code{-1};
-    std::thread reply_thread([&reply_collector, &reply_collector_exit_code] {
+    std::thread reply_thread([&reply_collector, &reply_collector_exit_code] {  // Reply 接收单独阻塞，主线程仍可巡检 Worker 和处理超时。
         reply_collector_exit_code.store(reply_collector.run(), std::memory_order_release);  // Reply 接收只在独立低频线程阻塞，不占用 WorkFunc 或主监控循环。
     });
 
