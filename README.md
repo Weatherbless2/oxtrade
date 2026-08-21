@@ -53,6 +53,23 @@ docs/       Architecture and development notes
 include/    Public C++ headers
 src/        Application source
 tests/      CTest-based automated tests
+client/     #16 Python/vn.py extension, Mock transport and Qt page shell
+```
+
+## 工单 #16 Mock 客户端
+
+`client/vnpy_oxapp` 是独立的 Python 客户端扩展：它提供可替换的通信接口、Mock 系统/用户/资金/
+风控服务、请求关联与 Qt 页面壳，并且不修改上游 vn.py。当前是 Mock-only，不连接真实 HP-Socket、
+PackMessage、oxMBS、数据库或交易柜台。
+
+安装依赖并运行：
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r client/requirements.txt
+PYTHONPATH=client python -m unittest discover -s tests/python -v
+PYTHONPATH=client python -m vnpy_oxapp.app
 ```
 
 ## Development Boundary

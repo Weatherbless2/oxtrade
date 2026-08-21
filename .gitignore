@@ -3,6 +3,11 @@
 /out/
 /Testing/
 
+# Python client virtual environment and test caches
+/.venv/
+**/__pycache__/
+.pytest_cache/
+
 # Runtime output and local configuration
 /logs/
 /config/oxapp.ini
