@@ -23,3 +23,6 @@ class UserService(BaseService):
 
     def list_role_rights(self, **filters) -> Future[ClientResponse]:
         return self.client.request(session_id=self.session_id, msg_type="role_rights", func_id="page", payload=filters)
+
+    def login(self, user_name: str, password: str = "mock-password") -> Future[ClientResponse]:
+        return self.request_resource("users", "login", {"user_name": user_name, "password": password})  # Mock 登录也经过请求关联，不直接修改客户端会话。

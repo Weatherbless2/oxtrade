@@ -25,3 +25,21 @@ class BaseService:
             payload=payload or {},  # None 归一化为空对象，保持协议字段形状。
             timeout_ms=timeout_ms,  # 超时边界由客户端单调时钟统一管理。
         )
+
+    def request_resource(self, resource: str, operation: str, payload: dict[str, Any] | None = None) -> Future[ClientResponse]:
+        """发送资源级操作，CRUD 与查询共用同一关联、超时和 Transport 边界。"""
+        return self.client.request(
+            session_id=self.session_id,
+            msg_type=resource,
+            func_id=operation,
+            payload=payload or {},
+        )
+
+    def create(self, resource: str, record: dict[str, Any]) -> Future[ClientResponse]:
+        return self.request_resource(resource, "create", {"record": record})  # 服务端分配 Mock 主键，页面只提交可编辑字段。
+
+    def update(self, resource: str, record_id: str, changes: dict[str, Any]) -> Future[ClientResponse]:
+        return self.request_resource(resource, "update", {"record_id": record_id, "changes": changes})
+
+    def transition(self, resource: str, record_id: str, state: str) -> Future[ClientResponse]:
+        return self.request_resource(resource, "transition", {"record_id": record_id, "state": state})

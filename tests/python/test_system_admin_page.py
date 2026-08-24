@@ -30,11 +30,11 @@ class SystemAdminPageTest(unittest.TestCase):
         system_page = window._pages.widget(1)
         self.assertEqual(4, system_page._tabs.count())
         panel = system_page._tabs.widget(0)._content
-        self.assertEqual(4, panel._table.rowCount())
+        self.assertEqual(20, panel._table.rowCount())  # 4 个一级菜单和 16 个子菜单覆盖了表格滚动与筛选场景。
         system_page._tabs.setCurrentIndex(1)
         for _ in range(30):
             app.processEvents()
             time.sleep(0.01)
-        self.assertEqual(3, system_page._tabs.widget(1)._content._table.rowCount())
+        self.assertEqual(8, system_page._tabs.widget(1)._content._table.rowCount())
         window.close()
         app.processEvents()

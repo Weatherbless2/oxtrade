@@ -16,7 +16,7 @@ class MockTransportTest(unittest.TestCase):
         response = client.request(session_id="mock-session", msg_type="users", func_id="page", payload={"page_size": 2}).result(timeout=0.2)  # 等待异步 Timer 返回。
         self.assertTrue(response.is_success)  # 正常业务必须明确为 succeeded。
         self.assertEqual(2, len(response.payload["items"]))  # 当前页按 page_size 返回两条。
-        self.assertEqual(4, response.payload["total"])  # total 验证底层快照总数未被分页截断。
+        self.assertEqual(40, response.payload["total"])  # total 验证扩充后的用户快照不会被单页大小截断。
 
     def test_empty_permission_and_service_error_scenarios(self) -> None:
         checks = (

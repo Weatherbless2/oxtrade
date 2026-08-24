@@ -28,11 +28,11 @@ class UserRightsPageTest(unittest.TestCase):
             time.sleep(0.01)
         page = window._pages.widget(2)
         self.assertEqual(4, page._tabs.count())
-        self.assertEqual(4, page._tabs.widget(0)._content._table.rowCount())
+        self.assertEqual(20, page._tabs.widget(0)._content._table.rowCount())  # 默认单页最大 20，剩余记录用于后续翻页验证。
         page._tabs.setCurrentIndex(3)
         for _ in range(30):
             app.processEvents()
             time.sleep(0.01)
-        self.assertEqual(4, page._tabs.widget(3)._content._table.rowCount())
+        self.assertEqual(20, page._tabs.widget(3)._content._table.rowCount())
         window.close()
         app.processEvents()
