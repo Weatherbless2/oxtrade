@@ -15,15 +15,18 @@ except ImportError:
 from .page_container import PageContainer, PageState
 from .qt_bridge import AsyncQtBridge
 from ..logging import ClientLogger, LoadTiming
+from ..connection import ClientProtocolClient
+from .system_admin_page import SystemAdminPage
 
 
 if PYSIDE_AVAILABLE:
     class OxAppMainWindow(QMainWindow):
         """只提供公共壳；#18-#21 在对应页替换当前占位内容。"""
 
-        def __init__(self, bridge: AsyncQtBridge, parent: QWidget | None = None, logger: ClientLogger | None = None) -> None:
+        def __init__(self, bridge: AsyncQtBridge, client: ClientProtocolClient | None = None, parent: QWidget | None = None, logger: ClientLogger | None = None) -> None:
             super().__init__(parent)
             self.logger = logger or ClientLogger()  # 测试/嵌入场景可注入统一日志器，也可默认静默文件输出。
+            self.client = client  # 页面通过服务接口共享同一个客户端通信实例。
             self.load_timings: list[LoadTiming] = []  # 页面可读取每个构造阶段耗时，后续用于性能面板。
             self.bridge = bridge  # 保存跨线程消息入口，窗口不直接依赖 Transport。
             self.setWindowTitle("oxApp 管理客户端")  # 用户看到的公共窗口标题。
@@ -58,18 +61,27 @@ if PYSIDE_AVAILABLE:
             self.setStatusBar(status)  # 安装到窗口底部。
 
         def _build_pages(self) -> None:
-            pages = (
-                ("概览", "客户端通信已就绪，等待业务页面接入"),
-                ("系统管理", "#18 将接入数据字典、菜单和日志页面"),
+            self._add_page("概览", QLabel("客户端通信已就绪，等待业务页面接入"))
+            if self.client is not None:
+                self._add_page("系统管理", SystemAdminPage(self.client, self.bridge, self.logger))
+            else:
+                self._add_page("系统管理", QLabel("缺少客户端通信实例"))
+            placeholders = (
                 ("用户权限", "#19 将接入用户、角色、站点和权限页面"),
                 ("产品资金", "#20 将接入产品、资产和资金账号页面"),
                 ("风控管理", "#21 将接入参数和规则页面"),
             )
-            for title, placeholder in pages:
-                self._navigation.addItem(QListWidgetItem(title))  # 导航项索引与页面堆叠索引一一对应。
-                content = QLabel(placeholder)  # 工单 16 只放占位内容，不宣称页面业务已实现。
+            for title, placeholder in placeholders:
+                self._add_page(title, QLabel(placeholder))
+
+        def _add_page(self, title: str, content: QWidget) -> None:
+            self._navigation.addItem(QListWidgetItem(title))  # 导航项索引与页面堆叠索引一一对应。
+            if isinstance(content, SystemAdminPage):
+                page = content
+            else:
                 content.setAlignment(Qt.AlignmentFlag.AlignCenter)  # 占位文案居中显示。
-                self._pages.addWidget(PageContainer(content))  # 页面容器统一提供加载/空/错误/权限状态。
+                page = PageContainer(content)  # 页面容器统一提供加载/空/错误/权限状态。
+            self._pages.addWidget(page)
 
         def _show_connection_state(self, state: str, reason: str) -> None:
             self._connection_status.setText(f"连接状态: {state} | {reason}")  # 状态和原因来自后台回调，经 Qt 主线程安全更新。

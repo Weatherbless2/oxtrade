@@ -32,6 +32,23 @@ class MockDataStore:
         {"menu_id": "m-fund", "menu_name": "产品资金", "parent_id": "", "enabled": True},
         {"menu_id": "m-risk", "menu_name": "风控管理", "parent_id": "", "enabled": True},
     )
+    dictionaries: tuple[dict[str, Any], ...] = (  # 数据字典提供启用状态和明细数量，覆盖系统配置展示。
+        {"dict_id": "dict-status", "dict_name": "用户状态", "category": "system", "enabled": True, "detail_count": 3},
+        {"dict_id": "dict-currency", "dict_name": "币种", "category": "fund", "enabled": True, "detail_count": 2},
+        {"dict_id": "dict-order", "dict_name": "委托状态", "category": "trade", "enabled": False, "detail_count": 5},
+    )
+    dictionary_details: tuple[dict[str, Any], ...] = (  # 明细通过 dict_id 与字典主表建立可筛选关联。
+        {"detail_id": "status-active", "dict_id": "dict-status", "value": "active", "label": "启用", "sort": 1, "enabled": True},
+        {"detail_id": "status-frozen", "dict_id": "dict-status", "value": "frozen", "label": "冻结", "sort": 2, "enabled": True},
+        {"detail_id": "status-pending", "dict_id": "dict-status", "value": "pending", "label": "待审核", "sort": 3, "enabled": True},
+        {"detail_id": "currency-cny", "dict_id": "dict-currency", "value": "CNY", "label": "人民币", "sort": 1, "enabled": True},
+        {"detail_id": "currency-usd", "dict_id": "dict-currency", "value": "USD", "label": "美元", "sort": 2, "enabled": True},
+    )
+    system_logs: tuple[dict[str, Any], ...] = (  # 日志页使用稳定的时间、操作员和级别字段验证筛选。
+        {"log_id": "log-001", "event_time": "2026-08-24 09:00:01", "operator": "yangjh", "level": "INFO", "event": "登录 Mock 客户端"},
+        {"log_id": "log-002", "event_time": "2026-08-24 09:00:03", "operator": "yangjh", "level": "INFO", "event": "查询系统菜单"},
+        {"log_id": "log-003", "event_time": "2026-08-24 09:01:12", "operator": "alice", "level": "WARN", "event": "权限不足示例"},
+    )
     products: tuple[dict[str, Any], ...] = (  # 产品与 project_ids 建立资金页面的上下游关系。
         {"fund_id": "fund-001", "fund_name": "量化一号", "status": "active", "project_ids": ("project-001", "project-002")},
         {"fund_id": "fund-002", "fund_name": "稳健增强", "status": "paused", "project_ids": ("project-003",)},

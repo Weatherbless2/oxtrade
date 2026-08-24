@@ -28,7 +28,7 @@ def main() -> int:
         client.set_response_callback(bridge.publish_response)  # 响应先进入 Qt queued signal，再由页面消费。
         client.set_state_callback(lambda state, reason: bridge.publish_state(state.value, reason))  # 状态同样禁止后台线程直接碰控件。
         client.connect()  # 连接状态通过 bridge 更新状态栏。
-        window = OxAppMainWindow(bridge, logger=logger)  # 构造公共导航和页面插槽，并记录控件加载耗时。
+        window = OxAppMainWindow(bridge, client=client, logger=logger)  # 构造公共导航和页面插槽，并记录控件加载耗时。
         window.show()  # 将窗口交给 Qt 事件循环显示。
         logger.info("client_ready", module="oxApp")
         return app.exec()  # 阻塞在 GUI 事件循环，退出码由 Qt 返回给操作系统。

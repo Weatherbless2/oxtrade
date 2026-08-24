@@ -48,6 +48,9 @@ class MockServiceRouter:
     def _page(self, service: str, payload: Mapping[str, Any]) -> PageResult:
         resource_map = {  # 将外部服务名映射到内部快照字段，页面不直接依赖存储结构。
             "system": "menus",
+            "dictionaries": "dictionaries",
+            "dictionary_details": "dictionary_details",
+            "system_logs": "system_logs",
             "users": "users",
             "roles": "roles",
             "sites": "sites",
@@ -62,7 +65,7 @@ class MockServiceRouter:
             raise MockServiceError("not_supported", f"unknown mock service: {service}") from error
         status = payload.get("status")
         if status:  # status 同时兼容记录状态字符串和 enabled 布尔字段。
-            rows = [row for row in rows if row.get("status") == status or row.get("enabled") == (status == "enabled")]  # 过滤后 total 反映真实匹配数。
+            rows = [row for row in rows if row.get("status") == status or row.get("level") == status or ("enabled" in row and row["enabled"] == (status == "enabled"))]  # 兼容状态、日志级别和布尔开关三类页面筛选。
         query = str(payload.get("query", "")).strip().lower()  # 统一大小写和空白，模拟页面搜索框输入。
         if query:
             rows = [row for row in rows if query in str(row).lower()]  # Mock 用整行文本匹配，保持实现简单可审计。

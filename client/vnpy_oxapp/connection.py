@@ -147,6 +147,7 @@ class ClientProtocolClient:
             timeout_ms=timeout_ms,
         )
         future: Future[ClientResponse] = Future()  # 页面通过 Future 等待结果，不阻塞发起请求的线程。
+        future.request_id = request.request_id  # 页面用稳定关联键匹配 Qt 回调，不依赖 Future 对象身份。
         with self._future_lock:
             self._futures[request.request_id] = future  # 发送前保存 Future，处理同步失败也能准确收口。
         if not self.transport.send(request):  # False 表示请求未进入传输层，必须补一条稳定的断线结果。

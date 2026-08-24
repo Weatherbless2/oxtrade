@@ -17,3 +17,12 @@ class SystemService(BaseService):
 
     def heartbeat(self) -> Future[ClientResponse]:
         return self.page(operation="heartbeat")  # 心跳沿用同一 Future/超时机制，但路由到 heartbeat 操作。
+
+    def list_dictionaries(self, **filters) -> Future[ClientResponse]:
+        return self.client.request(session_id=self.session_id, msg_type="dictionaries", func_id="page", payload=filters)
+
+    def list_dictionary_details(self, **filters) -> Future[ClientResponse]:
+        return self.client.request(session_id=self.session_id, msg_type="dictionary_details", func_id="page", payload=filters)
+
+    def list_logs(self, **filters) -> Future[ClientResponse]:
+        return self.client.request(session_id=self.session_id, msg_type="system_logs", func_id="page", payload=filters)
