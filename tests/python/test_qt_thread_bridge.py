@@ -34,3 +34,18 @@ class QtBridgeImportTest(unittest.TestCase):
             if receiver_threads:
                 break
         self.assertEqual([get_ident()], receiver_threads)  # 接收回调线程必须是 Qt 主线程。
+
+    def test_main_window_records_layout_and_page_load_timings(self) -> None:
+        from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge, PYSIDE_AVAILABLE
+
+        if not PYSIDE_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtWidgets import QApplication
+        from vnpy_oxapp.ui.main_window import OxAppMainWindow
+
+        app = QApplication.instance() or QApplication([])
+        window = OxAppMainWindow(AsyncQtBridge())
+        names = [timing.component for timing in window.load_timings]
+        self.assertEqual(["main_window_layout", "main_window_pages"], names)
+        window.close()
+        app.processEvents()

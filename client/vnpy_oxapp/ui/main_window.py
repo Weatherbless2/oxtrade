@@ -14,26 +14,32 @@ except ImportError:
 
 from .page_container import PageContainer, PageState
 from .qt_bridge import AsyncQtBridge
+from ..logging import ClientLogger, LoadTiming
 
 
 if PYSIDE_AVAILABLE:
     class OxAppMainWindow(QMainWindow):
         """只提供公共壳；#18-#21 在对应页替换当前占位内容。"""
 
-        def __init__(self, bridge: AsyncQtBridge, parent: QWidget | None = None) -> None:
+        def __init__(self, bridge: AsyncQtBridge, parent: QWidget | None = None, logger: ClientLogger | None = None) -> None:
             super().__init__(parent)
+            self.logger = logger or ClientLogger()  # 测试/嵌入场景可注入统一日志器，也可默认静默文件输出。
+            self.load_timings: list[LoadTiming] = []  # 页面可读取每个构造阶段耗时，后续用于性能面板。
             self.bridge = bridge  # 保存跨线程消息入口，窗口不直接依赖 Transport。
             self.setWindowTitle("oxApp 管理客户端")  # 用户看到的公共窗口标题。
             self.resize(1180, 760)  # 固定初始工作区，后续页面在右侧扩展。
             self._navigation = QListWidget()  # 左侧导航只负责选择页面索引。
             self._navigation.setFixedWidth(190)  # 左侧功能区尺寸稳定，右侧页面可独立扩展。
             self._pages = QStackedWidget()  # 右侧页面容器按索引切换，不销毁已创建页面。
-            self._build_layout()  # 创建根布局、分隔线和状态栏。
-            self._build_pages()  # 创建 #16 公共占位页，后续工单替换内容。
+            with self.logger.measure("main_window_layout", sink=self.load_timings, module="oxApp.ui"):
+                self._build_layout()  # 创建根布局、分隔线和状态栏。
+            with self.logger.measure("main_window_pages", sink=self.load_timings, module="oxApp.ui"):
+                self._build_pages()  # 创建 #16 公共占位页，后续工单替换内容。
             self._navigation.currentRowChanged.connect(self._pages.setCurrentIndex)  # 导航变化只改变右侧当前页。
             bridge.state_changed.connect(self._show_connection_state)  # Qt 主线程更新连接状态栏。
             bridge.response_received.connect(self._handle_response)  # 响应先经过 bridge，再由页面层解释 payload。
             self._navigation.setCurrentRow(0)  # 首次展示概览页。
+            self.logger.info(f"main_window_ready components={len(self.load_timings)}", module="oxApp.ui")
 
         def _build_layout(self) -> None:
             root = QWidget(self)  # 根控件承载左右两栏，生命周期归 QMainWindow。

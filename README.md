@@ -59,7 +59,7 @@ client/     #16 Python/vn.py extension, Mock transport and Qt page shell
 ## 工单 #16 Mock 客户端
 
 `client/vnpy_oxapp` 是独立的 Python 客户端扩展：它提供可替换的通信接口、Mock 系统/用户/资金/
-风控服务、请求关联与 Qt 页面壳，并且不修改上游 vn.py。当前是 Mock-only，不连接真实 HP-Socket、
+风控服务、请求关联、Qt 页面壳、客户端日志与加载耗时统计，并且不修改上游 vn.py。当前是 Mock-only，不连接真实 HP-Socket、
 PackMessage、oxMBS、数据库或交易柜台。
 
 安装依赖并运行：
