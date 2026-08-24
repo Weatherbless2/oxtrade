@@ -27,12 +27,18 @@ class UserRightsPageTest(unittest.TestCase):
             app.processEvents()
             time.sleep(0.01)
         page = window._pages.widget(2)
-        self.assertEqual(4, page._tabs.count())
+        self.assertEqual(8, page._tabs.count())  # 托管服务、用户菜单、产品和资产权限扩展为独立页签。
         self.assertEqual(20, page._tabs.widget(0)._content._table.rowCount())  # 默认单页最大 20，剩余记录用于后续翻页验证。
         page._tabs.setCurrentIndex(3)
         for _ in range(30):
             app.processEvents()
             time.sleep(0.01)
         self.assertEqual(20, page._tabs.widget(3)._content._table.rowCount())
+        for index, expected in ((4, 6), (5, 20), (6, 20), (7, 20)):
+            page._tabs.setCurrentIndex(index)
+            for _ in range(30):
+                app.processEvents()
+                time.sleep(0.01)
+            self.assertEqual(expected, page._tabs.widget(index)._content._table.rowCount())
         window.close()
         app.processEvents()

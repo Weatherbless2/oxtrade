@@ -33,6 +33,9 @@ class ErrorCode(str, Enum):
     TIMEOUT = "timeout"
     UNAUTHORIZED = "unauthorized"
     SERVICE_ERROR = "service_error"
+    VALIDATION_ERROR = "validation_error"
+    RISK_REJECTED = "risk_rejected"
+    NOT_FOUND = "not_found"
     PROTOCOL_ERROR = "protocol_error"
     DUPLICATE_RESPONSE = "duplicate_response"
 

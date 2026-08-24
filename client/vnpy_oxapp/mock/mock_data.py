@@ -16,11 +16,16 @@ RESOURCE_IDENTITIES: dict[str, tuple[str, str]] = {
     "menus": ("menu_id", "m"),
     "dictionaries": ("dict_id", "dict"),
     "dictionary_details": ("detail_id", "detail"),
+    "service_status": ("service_id", "service"),
+    "cololist": ("colo_id", "colo"),
     "role_rights": ("right_id", "rr"),
+    "user_menu_rights": ("right_id", "umr"),
+    "fund_rights": ("right_id", "fr"),
+    "project_rights": ("right_id", "pr"),
     "products": ("fund_id", "fund"),
     "projects": ("project_id", "project"),
     "accounts": ("account_id", "acct"),
-    "fund_project_links": ("link_id", "link"),
+    "fund_account_links": ("link_id", "link"),
     "risk_rules": ("rule_id", "risk"),
     "risk_parameters": ("parameter_id", "param"),
     "risk_events": ("event_id", "event"),
@@ -138,6 +143,30 @@ def _seed_logs() -> list[dict[str, Any]]:
     ]
 
 
+def _seed_service_status() -> list[dict[str, Any]]:
+    return [
+        {
+            "service_id": f"service-{index:03}", "service_name": "oxMBS Supervisor" if index == 1 else f"Mock 服务 {index:02}",
+            "service_type": "业务平台" if index <= 2 else ("行情/交易" if index <= 4 else "查询/托管"),
+            "endpoint": f"127.0.0.1:{7000 + index}", "status": "degraded" if index == 6 else "running",
+            "worker_count": 2 if index <= 2 else 1, "latency_ms": 2 + index * 3,
+            "heartbeat_at": f"2026-08-24 10:30:{index + 10:02}",
+        }
+        for index in range(1, 9)
+    ]
+
+
+def _seed_cololist() -> list[dict[str, Any]]:
+    return [
+        {
+            "colo_id": f"colo-{index:03}", "colo_name": f"Mock 托管站点 {index:02}",
+            "endpoint": f"10.30.{index}.10:9000", "ip_policy": "allowlist" if index % 2 == 0 else "internal",
+            "status": "maintenance" if index == 6 else "active", "last_heartbeat": f"2026-08-24 10:29:{index:02}",
+        }
+        for index in range(1, 7)
+    ]
+
+
 def _seed_role_rights() -> list[dict[str, Any]]:
     permissions = ("read", "read/write", "approve", "admin")
     return [
@@ -147,6 +176,40 @@ def _seed_role_rights() -> list[dict[str, Any]]:
             "permission": permissions[(index - 1) % len(permissions)], "enabled": index % 9 != 0,
         }
         for index in range(1, 33)
+    ]
+
+
+def _seed_user_menu_rights() -> list[dict[str, Any]]:
+    return [
+        {
+            "right_id": f"umr-{index:03}", "user_id": f"u-{1000 + ((index - 1) % 40) + 1}",
+            "menu_id": f"m-{('system', 'right', 'fund', 'risk')[(index - 1) % 4]}",
+            "permission": "approve" if index % 4 == 0 else ("write" if index % 3 == 0 else "read"),
+            "enabled": index % 13 != 0,
+        }
+        for index in range(1, 49)
+    ]
+
+
+def _seed_fund_rights() -> list[dict[str, Any]]:
+    return [
+        {
+            "right_id": f"fr-{index:03}", "user_id": f"u-{1000 + ((index - 1) % 40) + 1}",
+            "fund_id": f"fund-{((index - 1) % 12) + 1:03}", "permission": "manage" if index % 5 == 0 else "view",
+            "enabled": index % 11 != 0,
+        }
+        for index in range(1, 37)
+    ]
+
+
+def _seed_project_rights() -> list[dict[str, Any]]:
+    return [
+        {
+            "right_id": f"pr-{index:03}", "user_id": f"u-{1000 + ((index - 1) % 40) + 1}",
+            "project_id": f"project-{((index - 1) % 24) + 1:03}", "permission": "manage" if index % 5 == 0 else "view",
+            "enabled": index % 10 != 0,
+        }
+        for index in range(1, 37)
     ]
 
 
@@ -186,11 +249,11 @@ def _seed_accounts() -> list[dict[str, Any]]:
     ]
 
 
-def _seed_fund_project_links() -> list[dict[str, Any]]:
+def _seed_fund_account_links() -> list[dict[str, Any]]:
     return [
         {
-            "link_id": f"link-{index:03}", "fund_id": f"fund-{((index - 1) // 2) + 1:03}",
-            "project_id": f"project-{index:03}", "allocation": round(0.35 + (index % 3) * 0.15, 2),
+            "link_id": f"link-{index:03}", "project_id": f"project-{index:03}",
+            "account_id": f"acct-{((index - 1) % 18) + 1:03}", "allocation": f"{25 + (index % 4) * 25}%",
             "status": "active" if index % 5 else "paused",
         }
         for index in range(1, 25)
@@ -245,11 +308,16 @@ class MockDataStore:
     dictionaries: list[dict[str, Any]] = field(default_factory=_seed_dictionaries)
     dictionary_details: list[dict[str, Any]] = field(default_factory=_seed_dictionary_details)
     system_logs: list[dict[str, Any]] = field(default_factory=_seed_logs)
+    service_status: list[dict[str, Any]] = field(default_factory=_seed_service_status)
+    cololist: list[dict[str, Any]] = field(default_factory=_seed_cololist)
     role_rights: list[dict[str, Any]] = field(default_factory=_seed_role_rights)
+    user_menu_rights: list[dict[str, Any]] = field(default_factory=_seed_user_menu_rights)
+    fund_rights: list[dict[str, Any]] = field(default_factory=_seed_fund_rights)
+    project_rights: list[dict[str, Any]] = field(default_factory=_seed_project_rights)
     products: list[dict[str, Any]] = field(default_factory=_seed_products)
     projects: list[dict[str, Any]] = field(default_factory=_seed_projects)
     accounts: list[dict[str, Any]] = field(default_factory=_seed_accounts)
-    fund_project_links: list[dict[str, Any]] = field(default_factory=_seed_fund_project_links)
+    fund_account_links: list[dict[str, Any]] = field(default_factory=_seed_fund_account_links)
     risk_rules: list[dict[str, Any]] = field(default_factory=_seed_risk_rules)
     risk_parameters: list[dict[str, Any]] = field(default_factory=_seed_risk_parameters)
     risk_events: list[dict[str, Any]] = field(default_factory=_seed_risk_events)

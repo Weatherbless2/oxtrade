@@ -12,8 +12,8 @@ from .table_page import ServiceTablePage, TableSpec
 class SystemAdminPage(ServiceTablePage):
     """系统菜单、数据字典、字典明细和在线日志四个可交互标签页。"""
 
-    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, parent=None) -> None:
-        service = SystemService(client)
+    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, session="mock-session", parent=None) -> None:
+        service = SystemService(client, session)  # 所有管理页读取共享会话，登录后不会继续携带构造时写死的 Mock session。
         specs = (
             TableSpec(
                 "系统菜单",
@@ -53,6 +53,14 @@ class SystemAdminPage(ServiceTablePage):
                 (("event_time", "时间"), ("operator", "操作员"), ("level", "级别"), ("event", "事件")),
                 lambda filters: service.list_logs(**filters),
                 (("全部", ""), ("信息", "INFO"), ("警告", "WARN")),
+            ),
+            TableSpec(
+                "服务状态",
+                (("service_id", "服务编号"), ("service_name", "服务名称"), ("service_type", "服务类型"),
+                 ("endpoint", "地址"), ("status", "状态"), ("worker_count", "Worker"),
+                 ("latency_ms", "延迟(ms)"), ("heartbeat_at", "最近心跳")),
+                lambda filters: service.list_service_status(**filters),
+                (("全部", ""), ("运行中", "running"), ("降级", "degraded")),
             ),
         )
         super().__init__(client, bridge, logger, specs, parent)

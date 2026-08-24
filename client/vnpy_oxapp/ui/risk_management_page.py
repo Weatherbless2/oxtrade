@@ -12,8 +12,8 @@ from .table_page import ServiceTablePage, TableSpec
 class RiskManagementPage(ServiceTablePage):
     """风控配置和事件展示共用异步请求、筛选、状态和日志链路。"""
 
-    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, parent=None) -> None:
-        service = RiskService(client)
+    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, session="mock-session", parent=None) -> None:
+        service = RiskService(client, session)  # 风控配置查询与交易终端共用当前用户的会话边界。
         specs = (
             TableSpec(
                 "风控参数",

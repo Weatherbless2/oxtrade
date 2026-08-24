@@ -12,8 +12,8 @@ from .table_page import ServiceTablePage, TableSpec
 class UserRightsPage(ServiceTablePage):
     """把用户主表和角色/站点/菜单权限关联字段直接展示出来。"""
 
-    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, parent=None) -> None:
-        service = UserService(client)
+    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, session="mock-session", parent=None) -> None:
+        service = UserService(client, session)  # Service 保持同一对象但每次请求动态读取登录后的 session_id。
         specs = (
             TableSpec(
                 "用户管理",
@@ -57,6 +57,51 @@ class UserRightsPage(ServiceTablePage):
                 creator=lambda record: service.create("role_rights", record),
                 updater=lambda record_id, changes: service.update("role_rights", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("role_rights", record_id, state),
+            ),
+            TableSpec(
+                "托管服务",
+                (("colo_id", "托管编号"), ("colo_name", "服务名称"), ("endpoint", "地址"),
+                 ("ip_policy", "IP 策略"), ("status", "状态"), ("last_heartbeat", "最近心跳")),
+                lambda filters: service.list_cololist(**filters),
+                (("全部", ""), ("启用", "active"), ("维护", "maintenance")),
+                primary_key="colo_id",
+                editable_fields=(("colo_name", "服务名称"), ("endpoint", "地址"), ("ip_policy", "IP 策略")),
+                creator=lambda record: service.create("cololist", record),
+                updater=lambda record_id, changes: service.update("cololist", record_id, changes),
+                transitioner=lambda record_id, state: service.transition("cololist", record_id, state),
+            ),
+            TableSpec(
+                "用户菜单权限",
+                (("right_id", "权限编号"), ("user_id", "用户编号"), ("menu_id", "菜单编号"), ("permission", "权限"), ("enabled", "启用")),
+                lambda filters: service.list_user_menu_rights(**filters),
+                (("全部", ""), ("启用", "enabled"), ("停用", "disabled")),
+                primary_key="right_id",
+                editable_fields=(("user_id", "用户编号"), ("menu_id", "菜单编号"), ("permission", "权限")),
+                creator=lambda record: service.create("user_menu_rights", record),
+                updater=lambda record_id, changes: service.update("user_menu_rights", record_id, changes),
+                transitioner=lambda record_id, state: service.transition("user_menu_rights", record_id, state),
+            ),
+            TableSpec(
+                "产品权限",
+                (("right_id", "权限编号"), ("user_id", "用户编号"), ("fund_id", "产品编号"), ("permission", "权限"), ("enabled", "启用")),
+                lambda filters: service.list_fund_rights(**filters),
+                (("全部", ""), ("启用", "enabled"), ("停用", "disabled")),
+                primary_key="right_id",
+                editable_fields=(("user_id", "用户编号"), ("fund_id", "产品编号"), ("permission", "权限")),
+                creator=lambda record: service.create("fund_rights", record),
+                updater=lambda record_id, changes: service.update("fund_rights", record_id, changes),
+                transitioner=lambda record_id, state: service.transition("fund_rights", record_id, state),
+            ),
+            TableSpec(
+                "资产权限",
+                (("right_id", "权限编号"), ("user_id", "用户编号"), ("project_id", "资产编号"), ("permission", "权限"), ("enabled", "启用")),
+                lambda filters: service.list_project_rights(**filters),
+                (("全部", ""), ("启用", "enabled"), ("停用", "disabled")),
+                primary_key="right_id",
+                editable_fields=(("user_id", "用户编号"), ("project_id", "资产编号"), ("permission", "权限")),
+                creator=lambda record: service.create("project_rights", record),
+                updater=lambda record_id, changes: service.update("project_rights", record_id, changes),
+                transitioner=lambda record_id, state: service.transition("project_rights", record_id, state),
             ),
         )
         super().__init__(client, bridge, logger, specs, parent)

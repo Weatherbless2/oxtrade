@@ -83,6 +83,7 @@ if(UNIX)
 
     add_executable(oxMbsMockBackend
         src/oxmbs/mock/mock_backend_main.cpp
+        src/oxmbs/mock/mock_gateway.cpp
     )
     target_link_libraries(oxMbsMockBackend PRIVATE oxmbs_core oxapp_core)
     target_compile_definitions(oxMbsMockBackend PRIVATE

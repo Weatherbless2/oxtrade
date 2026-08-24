@@ -132,20 +132,33 @@ QTabBar::tab:selected {
     color: #ffffff;
     border-bottom: 2px solid #55a8da;
 }
-QLineEdit, QComboBox {
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     background: #10151a;
     color: #dce5eb;
     border: 1px solid #36434d;
     padding: 6px 8px;
     min-height: 18px;
 }
-QLineEdit:focus, QComboBox:focus {
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
     border: 1px solid #4b9ccc;
 }
 QComboBox QAbstractItemView {
     background: #1a2128;
     color: #dce5eb;
     selection-background-color: #2b4354;
+}
+QGroupBox {
+    background: #171d23;
+    color: #dce5eb;
+    border: 1px solid #2d3942;
+    margin-top: 12px;
+    padding: 12px 10px 8px;
+    font-weight: 600;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
 }
 QPushButton {
     background: #28475c;

@@ -196,9 +196,11 @@ std::string resource_for_service(const std::string& service) {
         return "risk_rules";
     }
     if (service == "dictionaries" || service == "dictionary_details" || service == "system_logs" ||
-        service == "role_rights" || service == "users" || service == "roles" || service == "sites" ||
-        service == "projects" || service == "accounts" || service == "fund_project_links" ||
-        service == "risk_parameters" || service == "risk_events") {
+        service == "service_status" || service == "cololist" || service == "role_rights" ||
+        service == "user_menu_rights" || service == "fund_rights" || service == "project_rights" ||
+        service == "users" || service == "roles" || service == "sites" || service == "projects" ||
+        service == "accounts" || service == "fund_account_links" || service == "risk_parameters" ||
+        service == "risk_events") {
         return service;
     }
     return {};
@@ -209,14 +211,19 @@ std::pair<std::string, std::string> identity_for_resource(const std::string& res
     if (resource == "dictionaries") return {"dict_id", "dict"};
     if (resource == "dictionary_details") return {"detail_id", "detail"};
     if (resource == "system_logs") return {"log_id", "log"};
+    if (resource == "service_status") return {"service_id", "service"};
+    if (resource == "cololist") return {"colo_id", "colo"};
     if (resource == "role_rights") return {"right_id", "right"};
+    if (resource == "user_menu_rights") return {"right_id", "umr"};
+    if (resource == "fund_rights") return {"right_id", "fr"};
+    if (resource == "project_rights") return {"right_id", "pr"};
     if (resource == "users") return {"user_id", "user"};
     if (resource == "roles") return {"role_id", "role"};
     if (resource == "sites") return {"site_id", "site"};
     if (resource == "products") return {"fund_id", "fund"};
     if (resource == "projects") return {"project_id", "project"};
     if (resource == "accounts") return {"account_id", "account"};
-    if (resource == "fund_project_links") return {"link_id", "link"};
+    if (resource == "fund_account_links") return {"link_id", "link"};
     if (resource == "risk_rules") return {"rule_id", "rule"};
     if (resource == "risk_parameters") return {"parameter_id", "parameter"};
     if (resource == "risk_events") return {"event_id", "event"};
@@ -262,6 +269,23 @@ MockStore make_store() {
         });
     }
     for (int index = 1; index <= 8; ++index) {
+        const bool online = index != 6;
+        store.resources["service_status"].push_back({
+            {"service_id", "service-" + padded(index)}, {"service_name", index == 1 ? "oxMBS Supervisor" : "Mock Service " + padded(index, 2)},
+            {"service_type", index <= 2 ? "业务平台" : (index <= 4 ? "行情/交易" : "查询/托管")},
+            {"endpoint", "127.0.0.1:" + std::to_string(7000 + index)}, {"status", online ? "running" : "degraded"},
+            {"worker_count", std::to_string(index <= 2 ? 2 : 1)}, {"latency_ms", std::to_string(2 + index * 3)},
+            {"heartbeat_at", "2026-08-24 10:30:" + padded(index + 10, 2)},
+        });  // 服务状态是 Mock 心跳快照，正式 #11/#15 会由守护进程和健康检查填充。
+    }
+    for (int index = 1; index <= 6; ++index) {
+        store.resources["cololist"].push_back({
+            {"colo_id", "colo-" + padded(index)}, {"colo_name", "Mock 托管站点 " + padded(index, 2)},
+            {"endpoint", "10.30." + std::to_string(index) + ".10:9000"}, {"ip_policy", index % 2 == 0 ? "allowlist" : "internal"},
+            {"status", index == 6 ? "maintenance" : "active"}, {"last_heartbeat", "2026-08-24 10:29:" + padded(index, 2)},
+        });  // cololist 只模拟托管服务配置和心跳，不代表已连接任一券商或生产主机。
+    }
+    for (int index = 1; index <= 8; ++index) {
         store.resources["dictionaries"].push_back({
             {"dict_id", "dict-" + padded(index)}, {"dict_name", "Mock Dictionary " + padded(index, 2)},
             {"category", index % 2 == 0 ? "system" : "risk"}, {"enabled", "true"}, {"detail_count", "4"},
@@ -282,6 +306,13 @@ MockStore make_store() {
             {"enabled", index % 11 == 0 ? "false" : "true"},
         });
     }
+    for (int index = 1; index <= 48; ++index) {
+        store.resources["user_menu_rights"].push_back({
+            {"right_id", "umr-" + padded(index)}, {"user_id", "user-" + padded((index - 1) % 40 + 1)},
+            {"menu_id", "menu-" + padded((index - 1) % 20 + 1)}, {"permission", index % 4 == 0 ? "approve" : (index % 3 == 0 ? "write" : "read")},
+            {"enabled", index % 13 == 0 ? "false" : "true"},
+        });  // 用户菜单权限独立于角色权限，页面可验证显式授权与角色继承并存的业务形态。
+    }
     for (int index = 1; index <= 12; ++index) {
         store.resources["products"].push_back({
             {"fund_id", "fund-" + padded(index)}, {"fund_name", "Mock Fund " + padded(index, 2)},
@@ -293,16 +324,31 @@ MockStore make_store() {
             {"project_id", "project-" + padded(index)}, {"project_name", "Mock Project " + padded(index, 2)},
             {"fund_id", "fund-" + padded((index - 1) / 2 + 1)}, {"status", index % 9 == 0 ? "paused" : "active"},
         });
-        store.resources["fund_project_links"].push_back({
-            {"link_id", "link-" + padded(index)}, {"fund_id", "fund-" + padded((index - 1) / 2 + 1)},
-            {"project_id", "project-" + padded(index)}, {"allocation", std::to_string(4 + index % 8) + "%"}, {"status", "active"},
-        });
     }
     for (int index = 1; index <= 18; ++index) {
         store.resources["accounts"].push_back({
             {"account_id", "account-" + padded(index)}, {"account_name", "Mock Account " + padded(index, 2)},
             {"fund_id", "fund-" + padded((index - 1) % 12 + 1)}, {"available", std::to_string(1000000 + index * 25000)}, {"currency", "CNY"},
         });
+    }
+    for (int index = 1; index <= 24; ++index) {
+        store.resources["fund_account_links"].push_back({
+            {"link_id", "link-" + padded(index)}, {"project_id", "project-" + padded(index)},
+            {"account_id", "account-" + padded((index - 1) % 18 + 1)}, {"allocation", std::to_string(25 + index % 4 * 25) + "%"},
+            {"status", index % 9 == 0 ? "paused" : "active"},
+        });  // 资产与资金账号是正式需求中的核心关联，Mock 先保留多对多关系和停用边界。
+    }
+    for (int index = 1; index <= 36; ++index) {
+        store.resources["fund_rights"].push_back({
+            {"right_id", "fr-" + padded(index)}, {"user_id", "user-" + padded((index - 1) % 40 + 1)},
+            {"fund_id", "fund-" + padded((index - 1) % 12 + 1)}, {"permission", index % 5 == 0 ? "manage" : "view"},
+            {"enabled", index % 11 == 0 ? "false" : "true"},
+        });
+        store.resources["project_rights"].push_back({
+            {"right_id", "pr-" + padded(index)}, {"user_id", "user-" + padded((index - 1) % 40 + 1)},
+            {"project_id", "project-" + padded((index - 1) % 24 + 1)}, {"permission", index % 5 == 0 ? "manage" : "view"},
+            {"enabled", index % 10 == 0 ? "false" : "true"},
+        });  // 产品/资产权限同样独立存储，后续 #12 由真实授权模型和数据表替换。
     }
     for (int index = 1; index <= 15; ++index) {
         store.resources["risk_parameters"].push_back({
@@ -437,7 +483,8 @@ MockResult handle_create(const std::string& resource, const Form& form) {
     }
     Records& rows = store().resources[resource];
     created[identity.first] = identity.second + "-" + padded(static_cast<int>(rows.size() + 1));  // 主键由 Mock LBM 生成，客户端只能提交可编辑字段。
-    if (resource == "risk_rules" || resource == "menus" || resource == "dictionaries" || resource == "dictionary_details" || resource == "role_rights") {
+    if (resource == "risk_rules" || resource == "menus" || resource == "dictionaries" || resource == "dictionary_details" ||
+        resource == "role_rights" || resource == "user_menu_rights" || resource == "fund_rights" || resource == "project_rights") {
         created.emplace("enabled", "true");
     } else if (resource == "risk_events") {
         created.emplace("handled", "false");
@@ -524,6 +571,12 @@ MockResult dispatch(const Form& form) {
     }
     if (operation == "login" && service == "users") {
         return handle_login(form);
+    }
+    if (operation == "logout" && service == "users") {
+        append_audit("Mock logout requested for " + form_value(form, "user_name"));
+        MockResult result;
+        result.payload_json = "{\"status\":\"logged_out\",\"source\":\"mock-lbm\"}";  // Mock 注销只结束客户端临时会话，不吊销真实令牌。
+        return result;
     }
     if (operation == "create") {
         return handle_create(resource, form);

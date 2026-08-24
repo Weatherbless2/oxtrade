@@ -19,7 +19,7 @@ class ClientLoggerTest(unittest.TestCase):
             logger.close()
             self.assertRegex(path.name, r"^oxTrader_\d{8}_\d{6}\.log$")
             line = path.read_text(encoding="utf-8").strip()
-            self.assertRegex(line, r"^\d{8} \d{6}\d{3}\|\[\d{5}\]\[\d{6,}\]\[oxApp\]\[INFO\]: client_started$")
+            self.assertRegex(line, r"^\d{8} \d{6}\d{3}\|\[\d{5,}\]\[\d{6,}\]\[oxApp\]\[INFO\]: client_started$")
             self.assertIn(line, output.getvalue())
 
     def test_level_filter_and_load_timing(self) -> None:

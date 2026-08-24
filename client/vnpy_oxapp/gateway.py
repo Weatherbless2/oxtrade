@@ -52,23 +52,36 @@ class OxAppGateway(BaseGateway):
         self.client.disconnect()  # 由 Transport 取消后台资源，再发布 DISCONNECTED。
 
     def query_account(self) -> None:
-        self._log_not_available("账户查询等待真实后台服务接入")
+        self._send_mock_query("accounts", "账户查询")
 
     def query_position(self) -> None:
-        self._log_not_available("持仓查询等待真实后台服务接入")
+        self._send_mock_query("positions", "持仓查询")
 
     def subscribe(self, req: Any) -> None:
-        del req
-        self._log_not_available("行情订阅等待 oxMWH/正式行情协议接入")
+        symbol = str(getattr(req, "vt_symbol", getattr(req, "symbol", "")))
+        future = self.client.request(session_id="mock-session", msg_type="market", func_id="subscribe", payload={"symbols": [symbol]})
+        self.on_log(LogData(msg=f"Mock 行情订阅已提交 request_id={future.request_id} symbol={symbol}", gateway_name=self.gateway_name))
 
     def send_order(self, req: Any) -> str:
-        del req
-        self._log_not_available("工单 #16 未实现真实下单")
-        return ""  # 空 orderid 明确表示没有向柜台发送订单。
+        symbol = str(getattr(req, "vt_symbol", getattr(req, "symbol", "")))
+        side = str(getattr(req, "direction", "buy")).lower()
+        side = "sell" if "sell" in side or "short" in side or "卖" in side else "buy"
+        future = self.client.request(
+            session_id="mock-session", msg_type="trade", func_id="place_order",
+            payload={"account_id": "MOCK-ACCT-001", "symbol": symbol, "name": symbol, "side": side,
+                     "price": float(getattr(req, "price", 0.0)), "volume": int(getattr(req, "volume", 0)), "order_type": "限价"},
+        )
+        self.on_log(LogData(msg=f"Mock 委托已提交 request_id={future.request_id}，不会发送到真实柜台", gateway_name=self.gateway_name))
+        return future.request_id  # 返回请求关联号，而不是伪造真实柜台 orderid；成交/拒绝由异步响应事件交付。
 
     def cancel_order(self, req: Any) -> None:
-        del req
-        self._log_not_available("工单 #16 未实现真实撤单")
+        order_id = str(getattr(req, "orderid", getattr(req, "order_id", "")))
+        future = self.client.request(session_id="mock-session", msg_type="trade", func_id="cancel_order", payload={"order_id": order_id})
+        self.on_log(LogData(msg=f"Mock 撤单已提交 request_id={future.request_id} order_id={order_id}", gateway_name=self.gateway_name))
+
+    def _send_mock_query(self, resource: str, label: str) -> None:
+        future = self.client.request(session_id="mock-session", msg_type="query", func_id="page", payload={"resource": resource})
+        self.on_log(LogData(msg=f"Mock {label}已提交 request_id={future.request_id}，结果通过 eOxAppResponse 交付", gateway_name=self.gateway_name))
 
     def _on_state(self, state: ConnectionState, reason: str) -> None:
         self.event_engine.put(Event(EVENT_OXAPP_CONNECTION, {"state": state.value, "reason": reason, "gateway": self.gateway_name}))  # 连接状态事件交给 vn.py 消费者。

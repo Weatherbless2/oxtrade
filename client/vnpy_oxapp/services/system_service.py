@@ -9,7 +9,7 @@ from ..message import ClientResponse
 
 
 class SystemService(BaseService):
-    def __init__(self, client, session_id: str = "mock-session") -> None:
+    def __init__(self, client, session_id="mock-session") -> None:
         super().__init__(client, "system", session_id)  # 系统管理资源由 system 路由统一处理。
 
     def list_menus(self, **filters) -> Future[ClientResponse]:
@@ -19,10 +19,13 @@ class SystemService(BaseService):
         return self.page(operation="heartbeat")  # 心跳沿用同一 Future/超时机制，但路由到 heartbeat 操作。
 
     def list_dictionaries(self, **filters) -> Future[ClientResponse]:
-        return self.client.request(session_id=self.session_id, msg_type="dictionaries", func_id="page", payload=filters)
+        return self.client.request(session_id=self.current_session_id, msg_type="dictionaries", func_id="page", payload=filters)
 
     def list_dictionary_details(self, **filters) -> Future[ClientResponse]:
-        return self.client.request(session_id=self.session_id, msg_type="dictionary_details", func_id="page", payload=filters)
+        return self.client.request(session_id=self.current_session_id, msg_type="dictionary_details", func_id="page", payload=filters)
 
     def list_logs(self, **filters) -> Future[ClientResponse]:
-        return self.client.request(session_id=self.session_id, msg_type="system_logs", func_id="page", payload=filters)
+        return self.client.request(session_id=self.current_session_id, msg_type="system_logs", func_id="page", payload=filters)
+
+    def list_service_status(self, **filters) -> Future[ClientResponse]:
+        return self.client.request(session_id=self.current_session_id, msg_type="service_status", func_id="page", payload=filters)  # 状态页仍复用低频查询链路；#11/#15 完成后只替换服务端数据源。

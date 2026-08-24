@@ -3,6 +3,7 @@
 #include "oxmbs/ipc/task_correlation.h"
 #include "oxmbs/lbm/lbm_task_dispatcher.h"
 #include "oxmbs/mock/mock_backend_protocol.h"
+#include "oxmbs/mock/mock_gateway.h"
 #include "oxmbs/routing/message_route_policy.h"
 #include "oxmbs/routing/mock_pack_message.h"
 #include "oxmbs/routing/workfunc_router.h"
@@ -272,6 +273,7 @@ private:
             oxmbs::mock::kMockPageFunctionId, oxmbs::mock::kMockHeartbeatFunctionId,
             oxmbs::mock::kMockLoginFunctionId, oxmbs::mock::kMockCreateFunctionId,
             oxmbs::mock::kMockUpdateFunctionId, oxmbs::mock::kMockTransitionFunctionId,
+            oxmbs::mock::kMockLogoutFunctionId,
         };
         for (const auto message_type : message_types) {
             for (const auto function_id : function_ids) {
@@ -289,6 +291,10 @@ private:
     }
 
     void route_request(const TransportRequest& request) {
+        if (request.service == "market" || request.service == "trade" || request.service == "query") {
+            route_high_frequency_gateway(request);  // 行情/交易模拟高频核心直接走 Mock Gateway，不得错误进入低频 Query Worker。
+            return;
+        }
         const auto route = oxmbs::mock::resolve_mock_route(request.service, request.operation);
         if (!route) {
             emit_failure(request, "protocol_error", "unknown Mock-only service or operation");
@@ -322,6 +328,20 @@ private:
         if (!routed.forwarded()) {
             emit_failure(request, "service_error", "Mock backend route failed: " + routed.error);
         }
+    }
+
+    void route_high_frequency_gateway(const TransportRequest& request) {
+        const std::uint64_t current_time = now_unix_ms();
+        if (current_time == 0 || request.deadline_unix_ms <= current_time) {
+            emit_response_line(request.request_id, request.session_id, request.service, request.operation,
+                               "timed_out", "timeout", "request deadline elapsed before Mock gateway routing", "{}");
+            return;
+        }
+        const Form form = parse_form(request.payload);
+        const oxmbs::mock::MockGatewayResult result = gateway_.handle(request.service, request.operation, form);
+        emit_response_line(
+            request.request_id, request.session_id, request.service, request.operation,
+            result.app_status, result.error_code, result.error_message, result.payload_json);  // 高低频均保持同一客户端关联/错误模型，页面无需知道路由差异。
     }
 
     std::uint64_t numeric_session_id(const std::string& session_id) {
@@ -382,6 +402,7 @@ private:
     std::map<std::string, std::uint64_t> session_ids_;
     std::uint64_t next_session_id_{1000};
     std::mutex stdout_mutex_;
+    oxmbs::mock::MockGateway gateway_;  // Mock-only 行情/交易核心；正式 #14/#15 接入时替换为 oxMWH 与交易/查询核心进程。
 };
 
 }  // namespace

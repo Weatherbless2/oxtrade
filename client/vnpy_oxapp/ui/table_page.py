@@ -42,6 +42,7 @@ class TableSpec:
     creator: Creator | None = None
     updater: Updater | None = None
     transitioner: Transitioner | None = None
+    transition_tooltip: str = "切换选中记录状态"
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +92,7 @@ if PYSIDE_AVAILABLE:
             self._edit.clicked.connect(self._request_update)
             self._transition = QToolButton()
             self._transition.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
-            self._transition.setToolTip("切换选中记录状态")
+            self._transition.setToolTip(spec.transition_tooltip)
             self._transition.clicked.connect(self._request_transition)
             self._previous = QToolButton()
             self._previous.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_ArrowBack))
@@ -151,6 +152,14 @@ if PYSIDE_AVAILABLE:
                 "page": self._page,
                 "page_size": self._page_size,
             }
+
+        def set_query_text(self, text: str) -> None:
+            """由宿主页同步行情标的筛选，仍由下一次 Service 请求在后端执行过滤。"""
+            self._query.setText(text)
+
+        def selected_record(self) -> dict[str, Any] | None:
+            """返回当前可见快照中的选中记录，供外部明确命令读取而不直接碰业务数据。"""
+            return self._selected_record()
 
         def set_rows(self, items: list[dict[str, Any]], total: int, page: int, page_size: int) -> None:
             self._rows = [dict(item) for item in items]  # 深拷贝响应快照，防止上层后续复用 payload 时改变已显示的选中记录。
@@ -339,6 +348,16 @@ if PYSIDE_AVAILABLE:
         def _load_current(self, index: int) -> None:
             if index >= 0:
                 self._load(index)
+
+        def refresh_all(self) -> None:
+            """在一个后端状态变更后重新请求全部相关快照，保持账户、持仓、委托和成交的一致视图。"""
+            for index in range(len(self._specs)):
+                self._load(index)
+
+        def selected_record(self, index: int) -> dict[str, Any] | None:
+            """把选中行读取限制在指定页签，外部命令不能凭全局行号误操作另一张表。"""
+            panel = self._panels.get(index)
+            return None if panel is None else panel[1].selected_record()
 
         def _load(self, index: int) -> None:
             if index < 0 or index >= len(self._specs):

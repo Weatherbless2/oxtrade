@@ -25,6 +25,10 @@ from .user_rights_page import UserRightsPage
 from .table_page import ServiceTablePage
 from .fund_management_page import FundManagementPage
 from .risk_management_page import RiskManagementPage
+from .market_page import MarketPage
+from .trading_page import TradingPage
+from .login_page import LoginPage
+from ..session import ClientSession
 from .theme import apply_workbench_theme
 
 
@@ -82,6 +86,9 @@ if PYSIDE_AVAILABLE:
         def set_transport_name(self, transport_name: str) -> None:
             self._endpoint.setText(f"通道：{transport_name}")  # 窗口后创建时仍主动显示实际 Transport，不能用旧的 MockTransport 静态文案误导联调结果。
 
+        def set_user(self, user_name: str, display_name: str) -> None:
+            self._user.setText(f"用户：{display_name or user_name} ({user_name}) | Mock")  # 登录页只更新会话展示，不把认证状态误写成真实生产权限。
+
 
     class LogPanel(QFrame):
         """独立运行日志页，沿用 vn.py 的表格监控器交互，不占用业务页面高度。"""
@@ -136,10 +143,13 @@ if PYSIDE_AVAILABLE:
             metrics.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
             metrics.horizontalHeader().setStretchLastSection(True)
             rows = (
+                ("登录会话", "可用", "Mock 用户登录、临时会话和权限边界"),
                 ("系统管理", "可用", "菜单、字典、在线日志"),
                 ("用户权限", "可用", "用户、角色、站点、角色菜单权限"),
                 ("产品资金", "可用", "产品、项目、资金账号及关联"),
                 ("风控管理", "可用", "参数、规则和异常事件"),
+                ("行情中心", "可用", "报价、Tick、分钟 K 线、盘口、订阅"),
+                ("交易终端", "可用", "模拟下单、撤单、成交、账户和持仓"),
             )
             for values in rows:
                 row = metrics.rowCount()
@@ -172,6 +182,7 @@ if PYSIDE_AVAILABLE:
                 apply_workbench_theme(app)  # 测试构造窗口和正式入口使用同一套 vn.py 风格主题。
             self.logger = logger or ClientLogger()
             self.client = client  # 页面只依赖客户端抽象，Mock/真实 Transport 可替换。
+            self.session = ClientSession()  # 所有页面共享一个会话对象，登录后服务请求自动携带新 session_id。
             self.load_timings: list[LoadTiming] = []
             self.bridge = bridge
             self.setWindowTitle("oxApp 管理工作台 | vn.py 风格客户端")
@@ -223,7 +234,7 @@ if PYSIDE_AVAILABLE:
             system.addSeparator()
             system.addAction(self._action("退出", self.close))
             features = bar.addMenu("功能")
-            for index, name in enumerate(("概览", "系统管理", "用户权限", "产品资金", "风控管理", "运行日志")):
+            for index, name in enumerate(("概览", "系统管理", "用户权限", "产品资金", "风控管理", "行情中心", "交易终端", "登录会话", "运行日志")):
                 features.addAction(self._action(name, lambda checked=False, i=index: self._select_page(i)))
             view = bar.addMenu("视图")
             view.addAction(self._action("恢复默认布局", self._restore_layout))
@@ -256,7 +267,7 @@ if PYSIDE_AVAILABLE:
             layout.addWidget(brand)
             layout.addWidget(subtitle)
             layout.addSpacing(8)
-            for title in ("概览", "系统管理", "用户权限", "产品资金", "风控管理", "运行日志"):
+            for title in ("概览", "系统管理", "用户权限", "产品资金", "风控管理", "行情中心", "交易终端", "登录会话", "运行日志"):
                 self._navigation.addItem(QListWidgetItem(title))
             layout.addWidget(self._navigation, 1)
             dock = QDockWidget("功能导航", self)
@@ -282,12 +293,17 @@ if PYSIDE_AVAILABLE:
         def _build_pages(self) -> None:
             self._add_page(OverviewPage())
             if self.client is not None:
-                self._add_page(SystemAdminPage(self.client, self.bridge, self.logger))
-                self._add_page(UserRightsPage(self.client, self.bridge, self.logger))
-                self._add_page(FundManagementPage(self.client, self.bridge, self.logger))
-                self._add_page(RiskManagementPage(self.client, self.bridge, self.logger))
+                self._add_page(SystemAdminPage(self.client, self.bridge, self.logger, self.session))
+                self._add_page(UserRightsPage(self.client, self.bridge, self.logger, self.session))
+                self._add_page(FundManagementPage(self.client, self.bridge, self.logger, self.session))
+                self._add_page(RiskManagementPage(self.client, self.bridge, self.logger, self.session))
+                self._add_page(MarketPage(self.client, self.bridge, self.logger, self.session))
+                self._add_page(TradingPage(self.client, self.bridge, self.logger, self.session))
+                self._login_page = LoginPage(self.client, self.bridge, self.logger, self.session)
+                self._login_page.session_changed.connect(self._on_session_changed)
+                self._add_page(self._login_page)
             else:
-                for _ in range(4):
+                for _ in range(7):
                     self._add_page(QLabel("缺少客户端通信实例"))
             self._log_panel = LogPanel()
             self._add_page(self._log_panel)  # 运行日志作为左侧导航的一项，业务页面不再被固定底部 Dock 压缩。
@@ -311,6 +327,8 @@ if PYSIDE_AVAILABLE:
             page = self._pages.currentWidget()
             if hasattr(page, "_tabs") and hasattr(page, "_load_current"):
                 page._load_current(page._tabs.currentIndex())  # 复用页面现有异步请求，不阻塞 Qt 主线程。
+            elif hasattr(page, "refresh_all"):
+                page.refresh_all()
             self._log_panel.append("INFO", "oxApp.ui", "刷新当前工作区")
 
         def _connect_mock(self) -> None:
@@ -335,6 +353,10 @@ if PYSIDE_AVAILABLE:
             self._connection_status.setText(f"连接状态: {state}")
             self._runtime_panel.set_connection(state, reason)
             self._log_panel.append("INFO", "oxApp.transport", f"连接状态: {state} | {reason}")
+
+        def _on_session_changed(self, data: dict) -> None:
+            self._runtime_panel.set_user(str(data.get("user_name", "")), str(data.get("display_name", "")))
+            self._log_panel.append("INFO", "oxApp.auth", f"Mock 会话已切换: {data.get('user_name', '')}")  # 这里只记录临时 Mock 会话，正式审计仍由 #12 后端完成。
 
         def _handle_response(self, response: object) -> None:
             del response  # 页面自行按 request_id 消费响应，窗口只保留公共状态壳。

@@ -13,9 +13,10 @@ from .mock_data import MockDataStore, RESOURCE_IDENTITIES
 
 RESOURCE_MAP = {
     "system": "menus", "dictionaries": "dictionaries", "dictionary_details": "dictionary_details",
-    "system_logs": "system_logs", "role_rights": "role_rights", "users": "users", "roles": "roles",
-    "sites": "sites", "funds": "products", "projects": "projects", "accounts": "accounts",
-    "fund_project_links": "fund_project_links", "risk": "risk_rules", "risk_parameters": "risk_parameters",
+    "system_logs": "system_logs", "service_status": "service_status", "role_rights": "role_rights", "users": "users", "roles": "roles",
+    "sites": "sites", "cololist": "cololist", "user_menu_rights": "user_menu_rights", "fund_rights": "fund_rights",
+    "project_rights": "project_rights", "funds": "products", "projects": "projects", "accounts": "accounts",
+    "fund_account_links": "fund_account_links", "risk": "risk_rules", "risk_parameters": "risk_parameters",
     "risk_events": "risk_events",
 }
 
@@ -156,7 +157,7 @@ class MockServiceRouter:
     def _default_record(resource: str) -> dict[str, Any]:
         if resource in {"menus", "dictionaries", "dictionary_details", "role_rights", "risk_rules"}:
             return {"enabled": True}
-        if resource in {"users", "roles", "sites", "products", "projects", "accounts", "fund_project_links"}:
+        if resource in {"users", "roles", "sites", "products", "projects", "accounts", "cololist", "fund_account_links"}:
             return {"status": "active"}
         if resource == "risk_events":
             return {"handled": False}

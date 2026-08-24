@@ -28,7 +28,7 @@ class SystemAdminPageTest(unittest.TestCase):
             app.processEvents()
             time.sleep(0.01)
         system_page = window._pages.widget(1)
-        self.assertEqual(4, system_page._tabs.count())
+        self.assertEqual(5, system_page._tabs.count())  # 服务状态页签覆盖最终架构中的运行监控功能。
         panel = system_page._tabs.widget(0)._content
         self.assertEqual(20, panel._table.rowCount())  # 4 个一级菜单和 16 个子菜单覆盖了表格滚动与筛选场景。
         system_page._tabs.setCurrentIndex(1)
@@ -36,5 +36,10 @@ class SystemAdminPageTest(unittest.TestCase):
             app.processEvents()
             time.sleep(0.01)
         self.assertEqual(8, system_page._tabs.widget(1)._content._table.rowCount())
+        system_page._tabs.setCurrentIndex(4)
+        for _ in range(30):
+            app.processEvents()
+            time.sleep(0.01)
+        self.assertEqual(8, system_page._tabs.widget(4)._content._table.rowCount())
         window.close()
         app.processEvents()

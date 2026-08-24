@@ -12,8 +12,8 @@ from .table_page import ServiceTablePage, TableSpec
 class FundManagementPage(ServiceTablePage):
     """产品、项目、账号和关联关系使用同一异步表格交互。"""
 
-    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, parent=None) -> None:
-        service = FundService(client)
+    def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, session="mock-session", parent=None) -> None:
+        service = FundService(client, session)  # 后续切换真实登录令牌时，产品资金页无需重建或重写。
         specs = (
             TableSpec(
                 "产品管理",
@@ -48,15 +48,15 @@ class FundManagementPage(ServiceTablePage):
                 transitioner=lambda record_id, state: service.transition("accounts", record_id, state),
             ),
             TableSpec(
-                "产品项目关联",
-                (("link_id", "关联编号"), ("fund_id", "产品编号"), ("project_id", "项目编号"), ("allocation", "配置比例"), ("status", "状态")),
-                lambda filters: service.list_project_links(**filters),
+                "资产账号关联",
+                (("link_id", "关联编号"), ("project_id", "资产编号"), ("account_id", "资金账号"), ("allocation", "配置比例"), ("status", "状态")),
+                lambda filters: service.list_account_links(**filters),
                 (("全部", ""), ("启用", "active"), ("暂停", "paused")),
                 primary_key="link_id",
-                editable_fields=(("fund_id", "产品编号"), ("project_id", "项目编号"), ("allocation", "配置比例")),
-                creator=lambda record: service.create("fund_project_links", record),
-                updater=lambda record_id, changes: service.update("fund_project_links", record_id, changes),
-                transitioner=lambda record_id, state: service.transition("fund_project_links", record_id, state),
+                editable_fields=(("project_id", "资产编号"), ("account_id", "资金账号"), ("allocation", "配置比例")),
+                creator=lambda record: service.create("fund_account_links", record),
+                updater=lambda record_id, changes: service.update("fund_account_links", record_id, changes),
+                transitioner=lambda record_id, state: service.transition("fund_account_links", record_id, state),
             ),
         )
         super().__init__(client, bridge, logger, specs, parent)
