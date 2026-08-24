@@ -6,7 +6,7 @@ import sys
 
 from .connection import ClientProtocolClient
 from .logging import create_startup_logger
-from .mock.mock_transport import MockTransport
+from .mock.mock_backend_transport import MockBackendTransport
 from .ui.main_window import OxAppMainWindow
 from .ui.qt_bridge import AsyncQtBridge
 from .ui.theme import apply_workbench_theme
@@ -26,7 +26,7 @@ def main() -> int:
         app = QApplication(sys.argv)  # 创建 Qt 主线程事件循环，所有 QWidget 必须归它管理。
         apply_workbench_theme(app)  # 正式入口和测试构造窗口共用同一套 vn.py 风格工作台主题。
         bridge = AsyncQtBridge()  # 建立后台 Transport 到 GUI 主线程的信号边界。
-        client = ClientProtocolClient(MockTransport())  # #16 只接入确定性 Mock，不连接真实后台。
+        client = ClientProtocolClient(MockBackendTransport())  # #24 默认走本地 C++ Mock 后端，验证 #1-#8；仍不连接真实 HP-Socket、数据库或柜台。
         client.set_response_callback(bridge.publish_response)  # 响应先进入 Qt queued signal，再由页面消费。
         client.set_state_callback(lambda state, reason: bridge.publish_state(state.value, reason))  # 状态同样禁止后台线程直接碰控件。
         client.connect()  # 连接状态通过 bridge 更新状态栏。

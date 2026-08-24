@@ -15,9 +15,9 @@ try:
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import (
-        QFileDialog, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu,
-        QPushButton, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-        QWidget,
+        QDialog, QDialogButtonBox, QFileDialog, QComboBox, QFormLayout, QFrame,
+        QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QTabWidget,
+        QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
     )
     PYSIDE_AVAILABLE = True
 except ImportError:
@@ -26,6 +26,9 @@ except ImportError:
 
 Column = tuple[str, str]
 Loader = Callable[[dict[str, Any]], Any]
+Creator = Callable[[dict[str, Any]], Any]
+Updater = Callable[[str, dict[str, Any]], Any]
+Transitioner = Callable[[str, str], Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +37,20 @@ class TableSpec:
     columns: tuple[Column, ...]
     loader: Loader
     statuses: tuple[tuple[str, str], ...] = (("全部", ""),)
+    primary_key: str = ""
+    editable_fields: tuple[Column, ...] = ()
+    creator: Creator | None = None
+    updater: Updater | None = None
+    transitioner: Transitioner | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PendingTableRequest:
+    container: PageContainer
+    panel: "DataTablePanel"
+    title: str
+    spec_index: int
+    action: str
 
 
 if PYSIDE_AVAILABLE:
@@ -41,23 +58,56 @@ if PYSIDE_AVAILABLE:
         """只负责控件和表格数据渲染，不直接访问服务或 Mock 数据。"""
 
         refresh_requested = Signal()
+        create_requested = Signal(dict)
+        update_requested = Signal(str, dict)
+        transition_requested = Signal(str, str)
 
-        def __init__(self, columns: tuple[Column, ...], statuses: tuple[tuple[str, str], ...], parent: QWidget | None = None) -> None:
+        def __init__(self, spec: TableSpec, parent: QWidget | None = None) -> None:
             super().__init__(parent)
-            self.columns = columns
+            self.columns = spec.columns
+            self._primary_key = spec.primary_key
+            self._editable_fields = spec.editable_fields
+            self._rows: list[dict[str, Any]] = []  # 表格只保存最近一次后端快照，用于定位选中行，不能在这里直接修改业务数据。
+            self._page = 1
+            self._page_size = 20
+            self._filter_signature = ("", "")
             self._query = QLineEdit()
             self._query.setPlaceholderText("输入关键字筛选")
             self._query.setClearButtonEnabled(True)
             self._status = QComboBox()
-            for label, value in statuses:
+            for label, value in spec.statuses:
                 self._status.addItem(label, value)
             refresh = QPushButton("刷新")
             refresh.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
             refresh.clicked.connect(self.refresh_requested.emit)
+            self._create = QToolButton()
+            self._create.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_FileDialogNewFolder))
+            self._create.setToolTip("新增记录")
+            self._create.clicked.connect(self._request_create)
+            self._edit = QToolButton()
+            self._edit.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_FileDialogDetailedView))
+            self._edit.setToolTip("编辑选中记录")
+            self._edit.clicked.connect(self._request_update)
+            self._transition = QToolButton()
+            self._transition.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
+            self._transition.setToolTip("切换选中记录状态")
+            self._transition.clicked.connect(self._request_transition)
+            self._previous = QToolButton()
+            self._previous.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_ArrowBack))
+            self._previous.setToolTip("上一页")
+            self._previous.clicked.connect(self._previous_page)
+            self._next = QToolButton()
+            self._next.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_ArrowForward))
+            self._next.setToolTip("下一页")
+            self._next.clicked.connect(self._next_page)
+            has_crud = bool(self._primary_key and self._editable_fields)
+            self._create.setVisible(has_crud and spec.creator is not None)
+            self._edit.setVisible(has_crud and spec.updater is not None)
+            self._transition.setVisible(bool(self._primary_key and spec.transitioner is not None))
             self._summary = QLabel("未加载")
             self._summary.setObjectName("tableSummary")
-            self._table = QTableWidget(0, len(columns))
-            self._table.setHorizontalHeaderLabels([title for _, title in columns])
+            self._table = QTableWidget(0, len(self.columns))
+            self._table.setHorizontalHeaderLabels([title for _, title in self.columns])
             self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
             self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -72,6 +122,11 @@ if PYSIDE_AVAILABLE:
             header.setContentsMargins(0, 0, 0, 0)
             header.addWidget(self._query, 1)
             header.addWidget(self._status)
+            header.addWidget(self._create)
+            header.addWidget(self._edit)
+            header.addWidget(self._transition)
+            header.addWidget(self._previous)
+            header.addWidget(self._next)
             header.addWidget(refresh)
             toolbar = QFrame()
             toolbar.setObjectName("summaryBar")
@@ -84,14 +139,21 @@ if PYSIDE_AVAILABLE:
             layout.addWidget(self._table, 1)
 
         def filters(self) -> dict[str, Any]:
+            signature = (self._query.text().strip(), self._status.currentData() or "")
+            if signature != self._filter_signature:
+                self._page = 1  # 改筛选条件后必须回到第一页，避免在旧页码上把有效结果误显示为空。
+                self._filter_signature = signature
             return {
-                "query": self._query.text().strip(),
-                "status": self._status.currentData() or "",
-                "page": 1,
-                "page_size": 20,
+                "query": signature[0],
+                "status": signature[1],
+                "page": self._page,
+                "page_size": self._page_size,
             }
 
-        def set_rows(self, items: list[dict[str, Any]], total: int) -> None:
+        def set_rows(self, items: list[dict[str, Any]], total: int, page: int, page_size: int) -> None:
+            self._rows = [dict(item) for item in items]  # 深拷贝响应快照，防止上层后续复用 payload 时改变已显示的选中记录。
+            self._page = max(1, page)
+            self._page_size = max(1, page_size)
             sorting_enabled = self._table.isSortingEnabled()
             self._table.setSortingEnabled(False)  # 填充期间禁止自动重排，否则逐行写入会把字段写到错误的行。
             self._table.setRowCount(len(items))
@@ -102,13 +164,17 @@ if PYSIDE_AVAILABLE:
                         value = ", ".join(str(part) for part in value)
                     item = QTableWidgetItem(str(value))
                     item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+                    if column_index == 0:
+                        item.setData(Qt.ItemDataRole.UserRole, dict(row))  # 排序会改变可见行序，主键快照绑定在首列才能避免 CRUD 取错原始 _rows 下标。
                     self._table.setItem(row_index, column_index, item)
             self._table.resizeColumnsToContents()
             for index in range(self._table.columnCount()):
                 width = self._table.columnWidth(index)
                 self._table.setColumnWidth(index, min(max(width + 18, 90), 260))  # 限制列宽，避免长关联字段挤压终端主表。
             self._table.setSortingEnabled(sorting_enabled)  # 数据完整写入后恢复用户可用的表头排序。
-            self._summary.setText(f"共 {total} 条，当前显示 {len(items)} 条")
+            self._previous.setEnabled(self._page > 1)
+            self._next.setEnabled(self._page * self._page_size < total)
+            self._summary.setText(f"共 {total} 条，第 {self._page} 页，当前显示 {len(items)} 条")
 
         def set_failure(self, message: str) -> None:
             self._summary.setText(message)
@@ -143,6 +209,81 @@ if PYSIDE_AVAILABLE:
                 for row in range(self._table.rowCount()):
                     writer.writerow([self._table.item(row, column).text() for column in range(self._table.columnCount())])
 
+        def _selected_record(self) -> dict[str, Any] | None:
+            row = self._table.currentRow()
+            first_item = self._table.item(row, 0) if row >= 0 else None
+            record = first_item.data(Qt.ItemDataRole.UserRole) if first_item is not None else None
+            if not isinstance(record, dict):
+                self.set_failure("请先选择一条记录")
+                return None
+            return dict(record)
+
+        def _request_create(self) -> None:
+            values = self._edit_values("新增记录", {})
+            if values is not None:
+                self.create_requested.emit(values)  # 面板只发出用户输入，实际 Service 请求仍由页面控制器创建。
+
+        def _previous_page(self) -> None:
+            if self._page > 1:
+                self._page -= 1
+                self.refresh_requested.emit()
+
+        def _next_page(self) -> None:
+            self._page += 1
+            self.refresh_requested.emit()
+
+        def _request_update(self) -> None:
+            record = self._selected_record()
+            if record is None:
+                return
+            record_id = str(record.get(self._primary_key, ""))
+            if not record_id:
+                self.set_failure("选中记录缺少主键")
+                return
+            values = self._edit_values("编辑记录", record)
+            if values is not None:
+                self.update_requested.emit(record_id, values)
+
+        def _request_transition(self) -> None:
+            record = self._selected_record()
+            if record is None:
+                return
+            record_id = str(record.get(self._primary_key, ""))
+            if not record_id:
+                self.set_failure("选中记录缺少主键")
+                return
+            if "enabled" in record:
+                enabled = str(record["enabled"]).lower() in {"true", "1", "yes"}
+                state = "disabled" if enabled else "enabled"
+            elif "handled" in record:
+                handled = str(record["handled"]).lower() in {"true", "1", "yes"}
+                state = "unhandled" if handled else "handled"
+            else:
+                state = "frozen" if str(record.get("status", "active")) == "active" else "active"
+            self.transition_requested.emit(record_id, state)  # 状态切换也必须走后端审计和权限校验，不能只改当前单元格文本。
+
+        def _edit_values(self, title: str, record: dict[str, Any]) -> dict[str, str] | None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle(title)
+            form = QFormLayout(dialog)
+            inputs: dict[str, QLineEdit] = {}
+            for key, label in self._editable_fields:
+                input_widget = QLineEdit(str(record.get(key, "")))
+                input_widget.setClearButtonEnabled(True)
+                form.addRow(label, input_widget)
+                inputs[key] = input_widget
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            form.addRow(buttons)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return None
+            values = {key: input_widget.text().strip() for key, input_widget in inputs.items()}
+            if not any(values.values()):
+                self.set_failure("至少填写一个字段")
+                return None
+            return values
+
 
     class ServiceTablePage(QWidget):
         """把多个 DataTablePanel 和 ClientProtocolClient 的异步回包关联起来。"""
@@ -152,7 +293,8 @@ if PYSIDE_AVAILABLE:
             self.client = client
             self.bridge = bridge
             self.logger = logger
-            self._pending: dict[str, tuple[PageContainer, DataTablePanel, str]] = {}
+            self._pending: dict[str, PendingTableRequest] = {}
+            self._panels: dict[int, tuple[PageContainer, DataTablePanel, str]] = {}
             self._tabs = QTabWidget()
             self._tabs.setDocumentMode(True)  # 文档模式更接近 vn.py 的监控器标签页，减少厚重边框。
             self._tabs.setMovable(True)
@@ -162,10 +304,13 @@ if PYSIDE_AVAILABLE:
             layout.addWidget(self._tabs)
             self._specs = specs
             for index, spec in enumerate(specs):
-                panel = DataTablePanel(spec.columns, spec.statuses)
+                panel = DataTablePanel(spec)
                 container = PageContainer(panel)
                 panel.refresh_requested.connect(lambda index=index: self._load(index))
-                self._pending[f"__spec_{index}"] = (container, panel, spec.title)
+                panel.create_requested.connect(lambda values, index=index: self._create(index, values))
+                panel.update_requested.connect(lambda record_id, values, index=index: self._update(index, record_id, values))
+                panel.transition_requested.connect(lambda record_id, state, index=index: self._transition(index, record_id, state))
+                self._panels[index] = (container, panel, spec.title)
                 self._tabs.addTab(container, spec.title)  # 先登记绑定再触发 Qt currentChanged，避免初始化竞态。
             bridge.response_received.connect(self._on_response)
             self._load(0)
@@ -178,15 +323,39 @@ if PYSIDE_AVAILABLE:
             if index < 0 or index >= len(self._specs):
                 return
             spec = self._specs[index]
-            container, panel, title = self._pending[f"__spec_{index}"]
+            container, panel, title = self._panels[index]
             container.show_state(PageState.LOADING)
             future = spec.loader(panel.filters())
             request_id = getattr(future, "request_id", "")
             if not request_id:
                 container.show_state(PageState.ERROR, "请求未生成关联编号")
                 return
-            self._pending[request_id] = (container, panel, title)
+            self._pending[request_id] = PendingTableRequest(container, panel, title, index, "page")
             future.add_done_callback(self._publish_future)
+
+        def _create(self, index: int, values: dict[str, Any]) -> None:
+            spec = self._specs[index]
+            if spec.creator is not None:
+                self._submit_mutation(index, "create", spec.creator(values))
+
+        def _update(self, index: int, record_id: str, values: dict[str, Any]) -> None:
+            spec = self._specs[index]
+            if spec.updater is not None:
+                self._submit_mutation(index, "update", spec.updater(record_id, values))
+
+        def _transition(self, index: int, record_id: str, state: str) -> None:
+            spec = self._specs[index]
+            if spec.transitioner is not None:
+                self._submit_mutation(index, "transition", spec.transitioner(record_id, state))
+
+        def _submit_mutation(self, index: int, action: str, future: Any) -> None:
+            request_id = getattr(future, "request_id", "")
+            if not request_id:
+                self._panels[index][1].set_failure("操作未生成关联编号")
+                return
+            container, panel, title = self._panels[index]
+            self._pending[request_id] = PendingTableRequest(container, panel, title, index, action)
+            future.add_done_callback(self._publish_future)  # 回包和页面刷新仍走 Qt bridge，后台 Transport 绝不触碰 QWidget。
 
         def _publish_future(self, future: Any) -> None:
             try:
@@ -198,16 +367,24 @@ if PYSIDE_AVAILABLE:
             binding = self._pending.pop(response.request_id, None)
             if binding is None:
                 return  # 其他页面或重复回包不属于当前页面，不能误更新表格。
-            container, panel, title = binding
+            container, panel, title = binding.container, binding.panel, binding.title
             if response.status is MessageStatus.UNAUTHORIZED:
                 container.show_state(PageState.UNAUTHORIZED, response.error_message)
             elif not response.is_success:
                 panel.set_failure(response.error_message)
                 container.show_state(PageState.ERROR, response.error_message)
+            elif binding.action != "page":
+                self.logger.info(f"page_mutation page={title} action={binding.action} status=ok", module="oxApp.ui")
+                self._load(binding.spec_index)  # 成功 mutation 后重新请求快照，禁止直接篡改 QTableWidget 内存行。
             else:
                 payload = response.payload
                 items = payload.get("items", [])
-                panel.set_rows(items, int(payload.get("total", len(items))))
+                panel.set_rows(
+                    items,
+                    int(payload.get("total", len(items))),
+                    int(payload.get("page", 1)),
+                    int(payload.get("page_size", max(1, len(items)))),
+                )
                 container.show_state(PageState.EMPTY if not items else PageState.CONTENT)
             self.logger.info(f"page_response page={title} status={response.status.value}", module="oxApp.ui")
 

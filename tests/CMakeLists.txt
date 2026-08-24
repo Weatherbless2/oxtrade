@@ -76,4 +76,14 @@ if(UNIX)
     add_dependencies(oxmbs_lbm_loader_test oxmbs_lbm_test_module)  # 测试运行前先保证 mock .so 已生成。
 
     add_test(NAME oxmbs_lbm_loader_test COMMAND oxmbs_lbm_loader_test)
+
+    add_executable(oxmbs_mock_lbm_end_to_end_test
+        test_mock_lbm_end_to_end.cpp
+    )
+    target_link_libraries(oxmbs_mock_lbm_end_to_end_test PRIVATE oxmbs_core oxapp_core)
+    target_compile_definitions(oxmbs_mock_lbm_end_to_end_test PRIVATE
+        OXMBS_MOCK_LBM_LIBRARY="$<TARGET_FILE:oxmbs_mock_lbm>"
+    )
+    add_dependencies(oxmbs_mock_lbm_end_to_end_test oxmbs_mock_lbm)  # 集成测试必须加载本工单构建出的 Mock-only 动态库。
+    add_test(NAME oxmbs_mock_lbm_end_to_end_test COMMAND oxmbs_mock_lbm_end_to_end_test)
 endif()

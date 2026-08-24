@@ -32,6 +32,7 @@ add_library(oxmbs_core
     src/oxmbs/lbm/funclist_registry.cpp
     src/oxmbs/lbm/lbm_module_loader.cpp
     src/oxmbs/lbm/lbm_task_dispatcher.cpp
+    src/oxmbs/mock/mock_backend_protocol.cpp
 )
 
 target_include_directories(oxapp_core
@@ -71,9 +72,34 @@ add_executable(oxMbsBootstrap
 
 target_link_libraries(oxMbsBootstrap PRIVATE oxmbs_core oxapp_core)
 
+if(UNIX)
+    # 仅 #24 本地联调使用：动态库保留 #8 的真实 dlopen/dlsym 边界，不承担 #11-#13 正式业务职责。
+    add_library(oxmbs_mock_lbm SHARED
+        src/oxmbs/mock/mock_lbm.cpp
+        src/oxmbs/mock/mock_backend_protocol.cpp  # Mock .so 独立解析其临时路由，不能依赖主进程静态库导出符号。
+    )
+    target_include_directories(oxmbs_mock_lbm PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_features(oxmbs_mock_lbm PRIVATE cxx_std_17)
+
+    add_executable(oxMbsMockBackend
+        src/oxmbs/mock/mock_backend_main.cpp
+    )
+    target_link_libraries(oxMbsMockBackend PRIVATE oxmbs_core oxapp_core)
+    target_compile_definitions(oxMbsMockBackend PRIVATE
+        OXMBS_MOCK_LBM_LIBRARY="$<TARGET_FILE:oxmbs_mock_lbm>"
+    )
+    add_dependencies(oxMbsMockBackend oxmbs_mock_lbm)  # 后端启动前必须已有可由生成 funclist 引用的 Mock-only .so。
+endif()
+
 set_target_properties(oxMbsBootstrap PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+if(TARGET oxMbsMockBackend)
+    set_target_properties(oxMbsMockBackend PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+endif()
 
 set_target_properties(oxApp PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

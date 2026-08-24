@@ -38,7 +38,7 @@ if PYSIDE_AVAILABLE:
             self._connection = QLabel("●  未连接")
             self._connection.setObjectName("connectionDot")
             self._user = QLabel("用户：yangjh (Mock)")
-            self._endpoint = QLabel("通道：MockTransport")
+            self._endpoint = QLabel("通道：等待连接")
             self._latency = QLabel("最近响应：-- ms")
             self._services = QTableWidget(0, 3)
             self._services.setHorizontalHeaderLabels(["服务", "状态", "延迟"])
@@ -78,6 +78,9 @@ if PYSIDE_AVAILABLE:
             self._connection.setText(f"●  {display}  |  {reason}")
             color = "#68c28a" if connected else "#d89b61"
             self._connection.setStyleSheet(f"color: {color}; font-weight: 600;")
+
+        def set_transport_name(self, transport_name: str) -> None:
+            self._endpoint.setText(f"通道：{transport_name}")  # 窗口后创建时仍主动显示实际 Transport，不能用旧的 MockTransport 静态文案误导联调结果。
 
 
     class LogPanel(QFrame):
@@ -184,6 +187,14 @@ if PYSIDE_AVAILABLE:
             self._navigation.currentRowChanged.connect(self._select_page)
             bridge.state_changed.connect(self._show_connection_state)
             bridge.response_received.connect(self._handle_response)
+            if self.client is not None:
+                transport_name = type(self.client.transport).__name__
+                self._runtime_panel.set_transport_name(transport_name)
+                self._latency_status.setText(f"{transport_name} | -- ms")
+                self._show_connection_state(
+                    self.client.transport.state.value,
+                    f"窗口初始化时读取 {transport_name} 当前状态",
+                )  # 连接可能早于 Qt signal 订阅完成，必须主动补发当前状态快照。
             self._navigation.setCurrentRow(0)
             self.logger.info(f"main_window_ready components={len(self.load_timings)}", module="oxApp.ui")
 
