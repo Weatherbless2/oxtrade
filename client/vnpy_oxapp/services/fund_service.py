@@ -17,3 +17,6 @@ class FundService(BaseService):
 
     def list_accounts(self, **filters):
         return self.client.request(session_id=self.session_id, msg_type="accounts", func_id="page", payload=filters)  # 资金账号列表交给 accounts 路由处理。
+
+    def list_project_links(self, **filters):
+        return self.client.request(session_id=self.session_id, msg_type="fund_project_links", func_id="page", payload=filters)

@@ -19,6 +19,7 @@ from ..connection import ClientProtocolClient
 from .system_admin_page import SystemAdminPage
 from .user_rights_page import UserRightsPage
 from .table_page import ServiceTablePage
+from .fund_management_page import FundManagementPage
 
 
 if PYSIDE_AVAILABLE:
@@ -67,11 +68,12 @@ if PYSIDE_AVAILABLE:
             if self.client is not None:
                 self._add_page("系统管理", SystemAdminPage(self.client, self.bridge, self.logger))
                 self._add_page("用户权限", UserRightsPage(self.client, self.bridge, self.logger))
+                self._add_page("产品资金", FundManagementPage(self.client, self.bridge, self.logger))
             else:
                 self._add_page("系统管理", QLabel("缺少客户端通信实例"))
                 self._add_page("用户权限", QLabel("缺少客户端通信实例"))
+                self._add_page("产品资金", QLabel("缺少客户端通信实例"))
             placeholders = (
-                ("产品资金", "#20 将接入产品、资产和资金账号页面"),
                 ("风控管理", "#21 将接入参数和规则页面"),
             )
             for title, placeholder in placeholders:

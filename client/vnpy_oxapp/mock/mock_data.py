@@ -64,6 +64,11 @@ class MockDataStore:
         {"project_id": "project-002", "project_name": "指数增强", "fund_id": "fund-001", "status": "active"},
         {"project_id": "project-003", "project_name": "低波动组合", "fund_id": "fund-002", "status": "paused"},
     )
+    fund_project_links: tuple[dict[str, Any], ...] = (  # 关联表把产品、资产项目和状态关系单独展示。
+        {"link_id": "link-001", "fund_id": "fund-001", "project_id": "project-001", "allocation": 0.60, "status": "active"},
+        {"link_id": "link-002", "fund_id": "fund-001", "project_id": "project-002", "allocation": 0.40, "status": "active"},
+        {"link_id": "link-003", "fund_id": "fund-002", "project_id": "project-003", "allocation": 1.00, "status": "paused"},
+    )
     accounts: tuple[dict[str, Any], ...] = (  # 资金账号只提供演示金额和币种，不连接真实账户。
         {"account_id": "acct-001", "account_name": "测试资金账号一", "fund_id": "fund-001", "available": 1_200_000.0, "currency": "CNY"},
         {"account_id": "acct-002", "account_name": "测试资金账号二", "fund_id": "fund-002", "available": 680_000.0, "currency": "CNY"},

@@ -58,6 +58,7 @@ class MockServiceRouter:
             "funds": "products",
             "projects": "projects",
             "accounts": "accounts",
+            "fund_project_links": "fund_project_links",
             "risk": "risk_rules",
         }
         try:
