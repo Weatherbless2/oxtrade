@@ -8,9 +8,9 @@ class QtBridgeImportTest(unittest.TestCase):
     def test_optional_qt_bridge_has_clear_dependency_boundary(self) -> None:
         from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge, PYSIDE_AVAILABLE
 
-        if not PYSIDE_AVAILABLE:
+        if not PYSIDE_AVAILABLE:  # 核心环境可不安装 Qt，但边界必须给出明确错误。
             with self.assertRaisesRegex(RuntimeError, "PySide6"):
-                AsyncQtBridge()
+                AsyncQtBridge()  # 验证缺依赖不会静默创建不可用桥接对象。
         else:
             bridge = AsyncQtBridge()
             self.assertIsNotNone(bridge)
@@ -26,11 +26,11 @@ class QtBridgeImportTest(unittest.TestCase):
         bridge = AsyncQtBridge()
         receiver_threads = []
         bridge.response_received.connect(lambda response: receiver_threads.append(get_ident()))
-        publisher = Thread(target=lambda: bridge.publish_response({"request_id": "r-1"}))
-        publisher.start()
-        publisher.join()
+        publisher = Thread(target=lambda: bridge.publish_response({"request_id": "r-1"}))  # 从后台线程发布，模拟 Timer/网络回调。
+        publisher.start()  # 后台线程只能 emit signal，不能访问 QWidget。
+        publisher.join()  # 等后台发布动作结束，再由主线程排空事件队列。
         for _ in range(20):
             app.processEvents()  # 排空 queued signal，验证 Timer/网络线程不直接触碰 QWidget。
             if receiver_threads:
                 break
-        self.assertEqual([get_ident()], receiver_threads)
+        self.assertEqual([get_ident()], receiver_threads)  # 接收回调线程必须是 Qt 主线程。
