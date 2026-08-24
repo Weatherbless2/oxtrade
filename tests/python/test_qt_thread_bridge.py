@@ -50,8 +50,8 @@ class QtBridgeImportTest(unittest.TestCase):
         window.close()
         app.processEvents()
 
-    def test_main_window_keeps_vnpy_workbench_regions_separate(self) -> None:
-        """验收 vn.py 风格的导航、中心页、运行状态和日志区域不会重新挤成单页。"""
+    def test_main_window_keeps_navigation_and_log_page_separate(self) -> None:
+        """验收运行日志由左侧导航进入，业务页不再被固定底部 Dock 挤压。"""
         from PySide6.QtWidgets import QApplication, QDockWidget
         from vnpy_oxapp.ui.main_window import OxAppMainWindow
         from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge
@@ -59,9 +59,11 @@ class QtBridgeImportTest(unittest.TestCase):
         app = QApplication.instance() or QApplication([])
         window = OxAppMainWindow(AsyncQtBridge())
         dock_names = {dock.objectName() for dock in window.findChildren(QDockWidget)}
-        self.assertTrue({"navigationDock", "runtimeDock", "logDock"}.issubset(dock_names))
-        self.assertEqual(5, window._navigation.count())
-        self.assertEqual(5, window._pages.count())
+        self.assertTrue({"navigationDock", "runtimeDock"}.issubset(dock_names))
+        self.assertNotIn("logDock", dock_names)
+        self.assertEqual(6, window._navigation.count())
+        self.assertEqual(6, window._pages.count())
         self.assertEqual("概览", window._navigation.item(0).text())
+        self.assertEqual("运行日志", window._navigation.item(5).text())
         window.close()
         app.processEvents()

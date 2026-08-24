@@ -8,7 +8,7 @@ try:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QAction
     from PySide6.QtWidgets import (
-        QApplication, QDockWidget, QFrame, QHBoxLayout, QLabel, QListWidget,
+        QApplication, QDockWidget, QFrame, QHBoxLayout, QHeaderView, QLabel, QListWidget,
         QListWidgetItem, QMainWindow, QProgressBar, QStyle, QStackedWidget,
         QStatusBar, QTableWidget, QTableWidgetItem, QToolBar, QVBoxLayout, QWidget,
     )
@@ -84,7 +84,7 @@ if PYSIDE_AVAILABLE:
 
 
     class LogPanel(QFrame):
-        """底部轻量日志监控器，模拟 vn.py LogMonitor 的固定底部 Dock。"""
+        """独立运行日志页，沿用 vn.py 的表格监控器交互，不占用业务页面高度。"""
 
         def __init__(self, parent: QWidget | None = None) -> None:
             super().__init__(parent)
@@ -95,8 +95,9 @@ if PYSIDE_AVAILABLE:
             self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             self._table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
             self._table.horizontalHeader().setStretchLastSection(True)
+            self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # 事件列接管剩余水平空间，日志页不会在右侧留下大块空白。
             layout = QVBoxLayout(self)
-            layout.setContentsMargins(8, 6, 8, 6)
+            layout.setContentsMargins(10, 10, 10, 10)
             layout.addWidget(self._table)
             for level, module, message in (
                 ("INFO", "oxApp", "Mock 客户端已连接"),
@@ -111,7 +112,8 @@ if PYSIDE_AVAILABLE:
             values = (datetime.now().strftime("%H:%M:%S.%f")[:-3], level, module, message)
             for column, value in enumerate(values):
                 self._table.setItem(row, column, QTableWidgetItem(value))
-            self._table.resizeColumnsToContents()
+            for column in range(3):
+                self._table.resizeColumnToContents(column)  # 固定字段按内容收紧，最后的事件列由 Stretch 自动铺满工作区。
 
 
     class OverviewPage(QFrame):
@@ -161,7 +163,7 @@ if PYSIDE_AVAILABLE:
 
 
     class OxAppMainWindow(QMainWindow):
-        """中心工作区 + 左侧导航 + 右侧状态 + 底部日志的管理终端布局。"""
+        """中心工作区 + 左侧导航 + 右侧状态的管理终端布局。"""
 
         def __init__(self, bridge: AsyncQtBridge, client: ClientProtocolClient | None = None, parent: QWidget | None = None, logger: ClientLogger | None = None) -> None:
             super().__init__(parent)
@@ -203,7 +205,6 @@ if PYSIDE_AVAILABLE:
             self._build_toolbar()
             self._build_navigation_dock()
             self._build_runtime_dock()
-            self._build_log_dock()
             self.setCentralWidget(self._pages)  # 中心区只承载当前工作页，避免所有业务表格同时挤在首页。
             self._connection_status = QLabel("连接状态: 未连接")
             self._latency_status = QLabel("Mock | -- ms")
@@ -222,7 +223,7 @@ if PYSIDE_AVAILABLE:
             system.addSeparator()
             system.addAction(self._action("退出", self.close))
             features = bar.addMenu("功能")
-            for index, name in enumerate(("概览", "系统管理", "用户权限", "产品资金", "风控管理")):
+            for index, name in enumerate(("概览", "系统管理", "用户权限", "产品资金", "风控管理", "运行日志")):
                 features.addAction(self._action(name, lambda checked=False, i=index: self._select_page(i)))
             view = bar.addMenu("视图")
             view.addAction(self._action("恢复默认布局", self._restore_layout))
@@ -255,7 +256,7 @@ if PYSIDE_AVAILABLE:
             layout.addWidget(brand)
             layout.addWidget(subtitle)
             layout.addSpacing(8)
-            for title in ("概览", "系统管理", "用户权限", "产品资金", "风控管理"):
+            for title in ("概览", "系统管理", "用户权限", "产品资金", "风控管理", "运行日志"):
                 self._navigation.addItem(QListWidgetItem(title))
             layout.addWidget(self._navigation, 1)
             dock = QDockWidget("功能导航", self)
@@ -278,17 +279,6 @@ if PYSIDE_AVAILABLE:
             self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
             self._runtime_dock = dock
 
-        def _build_log_dock(self) -> None:
-            dock = QDockWidget("运行日志", self)
-            dock.setObjectName("logDock")
-            self._log_panel = LogPanel()
-            dock.setWidget(self._log_panel)
-            dock.setMinimumHeight(135)
-            dock.setMaximumHeight(235)
-            dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
-            self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-            self._log_dock = dock
-
         def _build_pages(self) -> None:
             self._add_page(OverviewPage())
             if self.client is not None:
@@ -299,6 +289,8 @@ if PYSIDE_AVAILABLE:
             else:
                 for _ in range(4):
                     self._add_page(QLabel("缺少客户端通信实例"))
+            self._log_panel = LogPanel()
+            self._add_page(self._log_panel)  # 运行日志作为左侧导航的一项，业务页面不再被固定底部 Dock 压缩。
 
         def _add_page(self, content: QWidget) -> None:
             if isinstance(content, ServiceTablePage):
@@ -334,7 +326,6 @@ if PYSIDE_AVAILABLE:
         def _restore_layout(self) -> None:
             self._navigation_dock.show()
             self._runtime_dock.show()
-            self._log_dock.show()
             self._log_panel.append("INFO", "oxApp.ui", "已恢复默认工作台布局")
 
         def _show_about(self) -> None:

@@ -232,12 +232,12 @@ std::string padded(int value, int width = 3) {
 MockStore make_store() {
     MockStore store;
     for (int index = 1; index <= 40; ++index) {
-        const bool active = index % 7 != 0;
+        const std::string status = index % 11 == 0 ? "pending" : (index % 7 == 0 ? "frozen" : "active");  // Mock 状态覆盖待审核与冻结，前端筛选可验证真实 IPC/LBM 回包而不是仅在 Python 容器中演示。
         store.resources["users"].push_back({
             {"user_id", "user-" + padded(index)},
             {"user_name", index == 1 ? "yangjh" : "quant.user" + padded(index, 2)},
             {"display_name", index == 1 ? "Yang JH" : "Quant User " + padded(index, 2)},
-            {"status", active ? "active" : "frozen"},
+            {"status", status},
             {"role_ids", "role-" + padded((index - 1) % 8 + 1)},
             {"site_ids", "site-" + padded((index - 1) % 6 + 1)},
         });

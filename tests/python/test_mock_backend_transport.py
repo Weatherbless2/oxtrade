@@ -63,3 +63,11 @@ class MockBackendTransportTest(unittest.TestCase):
         ).result(timeout=2)
         self.assertEqual(MessageStatus.UNAUTHORIZED, response.status)
         self.assertEqual(ErrorCode.UNAUTHORIZED, response.error_code)
+
+    def test_pending_user_filter_is_backed_by_cpp_mock_lbm(self) -> None:
+        response = self.client.request(
+            session_id="mock-session", msg_type="users", func_id="page", payload={"status": "pending", "page": 1, "page_size": 10},
+        ).result(timeout=2)
+        self.assertTrue(response.is_success)
+        self.assertGreater(response.payload["total"], 0)  # 待审核数据来自 C++ Mock LBM，验证筛选确实跨 Python/IPC/动态库边界。
+        self.assertTrue(all(item["status"] == "pending" for item in response.payload["items"]))

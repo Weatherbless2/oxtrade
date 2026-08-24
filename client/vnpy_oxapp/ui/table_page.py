@@ -16,7 +16,7 @@ try:
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import (
         QDialog, QDialogButtonBox, QFileDialog, QComboBox, QFormLayout, QFrame,
-        QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QTabWidget,
+        QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QTabWidget,
         QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
     )
     PYSIDE_AVAILABLE = True
@@ -51,6 +51,7 @@ class PendingTableRequest:
     title: str
     spec_index: int
     action: str
+    load_generation: int = 0
 
 
 if PYSIDE_AVAILABLE:
@@ -115,6 +116,7 @@ if PYSIDE_AVAILABLE:
             self._table.setSortingEnabled(True)
             self._table.setWordWrap(False)
             self._table.verticalHeader().setVisible(False)
+            self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)  # 有限的当前页记录均匀填满表格高度，避免数据行下方留下大块空白。
             self._table.horizontalHeader().setStretchLastSection(True)
             self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self._table.customContextMenuRequested.connect(self._show_context_menu)
@@ -176,8 +178,25 @@ if PYSIDE_AVAILABLE:
             self._next.setEnabled(self._page * self._page_size < total)
             self._summary.setText(f"共 {total} 条，第 {self._page} 页，当前显示 {len(items)} 条")
 
+        def set_loading(self) -> None:
+            self._summary.setText("正在加载... 可继续调整筛选条件或点击刷新")  # 加载态只更新页内提示，筛选控件必须始终保留以便用户修正条件。
+
+        def set_empty(self) -> None:
+            self._clear_rows("暂无数据，可调整筛选条件或点击刷新")  # 空结果清空旧快照，仍保留筛选、分页和刷新入口，避免页面被锁死。
+
+        def set_unauthorized(self, message: str) -> None:
+            detail = message or "当前会话没有访问权限"
+            self._clear_rows(f"无访问权限：{detail}。可调整筛选条件或点击刷新")  # 权限失败不能继续保留可能敏感的旧数据，但操作入口仍必须可见。
+
         def set_failure(self, message: str) -> None:
-            self._summary.setText(message)
+            self._summary.setText(f"请求失败：{message or '未知错误'}。可调整筛选条件或点击刷新")
+
+        def _clear_rows(self, summary: str) -> None:
+            self._rows.clear()
+            self._table.setRowCount(0)  # 结果为空或无权时删除当前渲染快照，避免用户继续对过期行执行 CRUD。
+            self._previous.setEnabled(False)
+            self._next.setEnabled(False)
+            self._summary.setText(summary)
 
         def _show_context_menu(self, position) -> None:
             menu = QMenu(self)  # 表格右键菜单复用 vn.py Monitor 的操作习惯。
@@ -294,10 +313,12 @@ if PYSIDE_AVAILABLE:
             self.bridge = bridge
             self.logger = logger
             self._pending: dict[str, PendingTableRequest] = {}
+            self._load_generations: dict[int, int] = {}  # 每个页签独立计数，迟到的旧查询响应不能覆盖用户最新筛选结果。
             self._panels: dict[int, tuple[PageContainer, DataTablePanel, str]] = {}
             self._tabs = QTabWidget()
             self._tabs.setDocumentMode(True)  # 文档模式更接近 vn.py 的监控器标签页，减少厚重边框。
             self._tabs.setMovable(True)
+            self._tabs.tabBar().setExpanding(True)  # 页签按工作区宽度均匀展开，右侧不再出现未使用的空白带。
             self._tabs.currentChanged.connect(self._load_current)
             layout = QVBoxLayout(self)
             layout.setContentsMargins(0, 0, 0, 0)
@@ -324,13 +345,16 @@ if PYSIDE_AVAILABLE:
                 return
             spec = self._specs[index]
             container, panel, title = self._panels[index]
-            container.show_state(PageState.LOADING)
+            generation = self._load_generations.get(index, 0) + 1
+            self._load_generations[index] = generation
+            container.show_state(PageState.CONTENT)  # 表格页始终显示真实面板，不能用全页状态标签覆盖筛选工具栏。
+            panel.set_loading()
             future = spec.loader(panel.filters())
             request_id = getattr(future, "request_id", "")
             if not request_id:
-                container.show_state(PageState.ERROR, "请求未生成关联编号")
+                panel.set_failure("请求未生成关联编号")
                 return
-            self._pending[request_id] = PendingTableRequest(container, panel, title, index, "page")
+            self._pending[request_id] = PendingTableRequest(container, panel, title, index, "page", generation)
             future.add_done_callback(self._publish_future)
 
         def _create(self, index: int, values: dict[str, Any]) -> None:
@@ -368,11 +392,14 @@ if PYSIDE_AVAILABLE:
             if binding is None:
                 return  # 其他页面或重复回包不属于当前页面，不能误更新表格。
             container, panel, title = binding.container, binding.panel, binding.title
+            if binding.action == "page" and binding.load_generation != self._load_generations.get(binding.spec_index):
+                self.logger.info(f"page_response_ignored page={title} reason=stale_filter", module="oxApp.ui")
+                return  # 用户已触发新的筛选查询时，旧请求即使后到也不能回写表格，防止筛选结果闪回。
+            container.show_state(PageState.CONTENT)  # 成功、空、错误和权限结果都以内联方式提示，始终保留恢复操作。
             if response.status is MessageStatus.UNAUTHORIZED:
-                container.show_state(PageState.UNAUTHORIZED, response.error_message)
+                panel.set_unauthorized(response.error_message)
             elif not response.is_success:
                 panel.set_failure(response.error_message)
-                container.show_state(PageState.ERROR, response.error_message)
             elif binding.action != "page":
                 self.logger.info(f"page_mutation page={title} action={binding.action} status=ok", module="oxApp.ui")
                 self._load(binding.spec_index)  # 成功 mutation 后重新请求快照，禁止直接篡改 QTableWidget 内存行。
@@ -385,7 +412,8 @@ if PYSIDE_AVAILABLE:
                     int(payload.get("page", 1)),
                     int(payload.get("page_size", max(1, len(items)))),
                 )
-                container.show_state(PageState.EMPTY if not items else PageState.CONTENT)
+                if not items:
+                    panel.set_empty()
             self.logger.info(f"page_response page={title} status={response.status.value}", module="oxApp.ui")
 
 
