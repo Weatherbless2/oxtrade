@@ -9,6 +9,7 @@ from .logging import create_startup_logger
 from .mock.mock_transport import MockTransport
 from .ui.main_window import OxAppMainWindow
 from .ui.qt_bridge import AsyncQtBridge
+from .ui.theme import apply_workbench_theme
 
 
 def main() -> int:
@@ -23,6 +24,7 @@ def main() -> int:
         return 2  # 非零退出码让脚本/验收知道 GUI 根本没有启动。
     try:
         app = QApplication(sys.argv)  # 创建 Qt 主线程事件循环，所有 QWidget 必须归它管理。
+        apply_workbench_theme(app)  # 正式入口和测试构造窗口共用同一套 vn.py 风格工作台主题。
         bridge = AsyncQtBridge()  # 建立后台 Transport 到 GUI 主线程的信号边界。
         client = ClientProtocolClient(MockTransport())  # #16 只接入确定性 Mock，不连接真实后台。
         client.set_response_callback(bridge.publish_response)  # 响应先进入 Qt queued signal，再由页面消费。

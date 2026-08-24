@@ -49,3 +49,19 @@ class QtBridgeImportTest(unittest.TestCase):
         self.assertEqual(["main_window_layout", "main_window_pages"], names)
         window.close()
         app.processEvents()
+
+    def test_main_window_keeps_vnpy_workbench_regions_separate(self) -> None:
+        """验收 vn.py 风格的导航、中心页、运行状态和日志区域不会重新挤成单页。"""
+        from PySide6.QtWidgets import QApplication, QDockWidget
+        from vnpy_oxapp.ui.main_window import OxAppMainWindow
+        from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge
+
+        app = QApplication.instance() or QApplication([])
+        window = OxAppMainWindow(AsyncQtBridge())
+        dock_names = {dock.objectName() for dock in window.findChildren(QDockWidget)}
+        self.assertTrue({"navigationDock", "runtimeDock", "logDock"}.issubset(dock_names))
+        self.assertEqual(5, window._navigation.count())
+        self.assertEqual(5, window._pages.count())
+        self.assertEqual("概览", window._navigation.item(0).text())
+        window.close()
+        app.processEvents()

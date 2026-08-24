@@ -53,6 +53,7 @@ if PYSIDE_AVAILABLE:
         @staticmethod
         def _state_label(text: str) -> QLabel:
             label = QLabel(text)  # 标签承载统一状态文案。
+            label.setObjectName("pageStateLabel")  # 交给全局工作台主题统一显示加载、空数据和异常态。
             label.setProperty("default_text", text)  # 保存默认文案，下一次无 detail 时恢复。
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # 状态信息居中，避免页面内容偏移。
             return label  # 返回给堆叠容器接管生命周期。

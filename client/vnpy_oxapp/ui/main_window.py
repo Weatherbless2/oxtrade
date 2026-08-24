@@ -1,18 +1,22 @@
-"""工单 #16 公共管理页面壳：左侧导航、右侧切换区和连接状态栏。"""
+"""oxApp 管理工作台：沿用 vn.py 的菜单、Dock 和监控表格组织方式。"""
 
 from __future__ import annotations
 
+from datetime import datetime
+
 try:
     from PySide6.QtCore import Qt
+    from PySide6.QtGui import QAction
     from PySide6.QtWidgets import (
-        QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow,
-        QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
+        QApplication, QDockWidget, QFrame, QHBoxLayout, QLabel, QListWidget,
+        QListWidgetItem, QMainWindow, QProgressBar, QStyle, QStackedWidget,
+        QStatusBar, QTableWidget, QTableWidgetItem, QToolBar, QVBoxLayout, QWidget,
     )
     PYSIDE_AVAILABLE = True
 except ImportError:
     PYSIDE_AVAILABLE = False
 
-from .page_container import PageContainer, PageState
+from .page_container import PageContainer
 from .qt_bridge import AsyncQtBridge
 from ..logging import ClientLogger, LoadTiming
 from ..connection import ClientProtocolClient
@@ -21,76 +25,326 @@ from .user_rights_page import UserRightsPage
 from .table_page import ServiceTablePage
 from .fund_management_page import FundManagementPage
 from .risk_management_page import RiskManagementPage
+from .theme import apply_workbench_theme
 
 
 if PYSIDE_AVAILABLE:
+    class RuntimePanel(QFrame):
+        """右侧运行状态监控，展示客户端壳的连接与服务状态。"""
+
+        def __init__(self, parent: QWidget | None = None) -> None:
+            super().__init__(parent)
+            self.setObjectName("runtimePanel")
+            self._connection = QLabel("●  未连接")
+            self._connection.setObjectName("connectionDot")
+            self._user = QLabel("用户：yangjh (Mock)")
+            self._endpoint = QLabel("通道：MockTransport")
+            self._latency = QLabel("最近响应：-- ms")
+            self._services = QTableWidget(0, 3)
+            self._services.setHorizontalHeaderLabels(["服务", "状态", "延迟"])
+            self._services.verticalHeader().setVisible(False)
+            self._services.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            self._services.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+            self._services.setAlternatingRowColors(True)
+            self._services.horizontalHeader().setStretchLastSection(True)
+            for name, status, latency in (
+                ("客户端通信", "正常", "2 ms"),
+                ("系统管理", "Mock", "5 ms"),
+                ("权限服务", "Mock", "5 ms"),
+                ("风控服务", "Mock", "6 ms"),
+            ):
+                row = self._services.rowCount()
+                self._services.insertRow(row)
+                for column, value in enumerate((name, status, latency)):
+                    self._services.setItem(row, column, QTableWidgetItem(value))
+            self._services.resizeColumnsToContents()
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(12, 12, 12, 12)
+            layout.setSpacing(9)
+            layout.addWidget(QLabel("会话状态"))
+            layout.addWidget(self._connection)
+            layout.addWidget(self._user)
+            layout.addWidget(self._endpoint)
+            layout.addWidget(self._latency)
+            layout.addSpacing(8)
+            label = QLabel("服务监控")
+            label.setObjectName("pageSubtitle")
+            layout.addWidget(label)
+            layout.addWidget(self._services, 1)
+
+        def set_connection(self, state: str, reason: str) -> None:
+            connected = state.lower() in {"connected", "ready", "正常"}
+            display = "已连接" if connected else state
+            self._connection.setText(f"●  {display}  |  {reason}")
+            color = "#68c28a" if connected else "#d89b61"
+            self._connection.setStyleSheet(f"color: {color}; font-weight: 600;")
+
+
+    class LogPanel(QFrame):
+        """底部轻量日志监控器，模拟 vn.py LogMonitor 的固定底部 Dock。"""
+
+        def __init__(self, parent: QWidget | None = None) -> None:
+            super().__init__(parent)
+            self.setObjectName("logPanel")
+            self._table = QTableWidget(0, 4)
+            self._table.setHorizontalHeaderLabels(["时间", "级别", "模块", "事件"])
+            self._table.verticalHeader().setVisible(False)
+            self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            self._table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+            self._table.horizontalHeader().setStretchLastSection(True)
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(8, 6, 8, 6)
+            layout.addWidget(self._table)
+            for level, module, message in (
+                ("INFO", "oxApp", "Mock 客户端已连接"),
+                ("INFO", "oxApp.ui", "工作台布局加载完成"),
+                ("INFO", "oxApp.ui", "等待管理页面请求"),
+            ):
+                self.append(level, module, message)
+
+        def append(self, level: str, module: str, message: str) -> None:
+            row = self._table.rowCount()
+            self._table.insertRow(row)
+            values = (datetime.now().strftime("%H:%M:%S.%f")[:-3], level, module, message)
+            for column, value in enumerate(values):
+                self._table.setItem(row, column, QTableWidgetItem(value))
+            self._table.resizeColumnsToContents()
+
+
+    class OverviewPage(QFrame):
+        """工作台首页，提供与 vn.py Trader 类似的状态总览。"""
+
+        def __init__(self, parent: QWidget | None = None) -> None:
+            super().__init__(parent)
+            title = QLabel("oxApp 管理工作台")
+            title.setObjectName("pageTitle")
+            subtitle = QLabel("Mock-first 客户端 | 页面通过通信抽象访问服务")
+            subtitle.setObjectName("pageSubtitle")
+            progress = QProgressBar()
+            progress.setRange(0, 100)
+            progress.setValue(100)
+            progress.setFormat("客户端框架就绪   %p%")
+            metrics = QTableWidget(0, 3)
+            metrics.setHorizontalHeaderLabels(["工作区", "当前状态", "说明"])
+            metrics.verticalHeader().setVisible(False)
+            metrics.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            metrics.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+            metrics.horizontalHeader().setStretchLastSection(True)
+            rows = (
+                ("系统管理", "可用", "菜单、字典、在线日志"),
+                ("用户权限", "可用", "用户、角色、站点、角色菜单权限"),
+                ("产品资金", "可用", "产品、项目、资金账号及关联"),
+                ("风控管理", "可用", "参数、规则和异常事件"),
+            )
+            for values in rows:
+                row = metrics.rowCount()
+                metrics.insertRow(row)
+                for column, value in enumerate(values):
+                    metrics.setItem(row, column, QTableWidgetItem(value))
+            metrics.resizeColumnsToContents()
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(24, 22, 24, 22)
+            layout.setSpacing(12)
+            layout.addWidget(title)
+            layout.addWidget(subtitle)
+            layout.addSpacing(10)
+            layout.addWidget(progress)
+            layout.addSpacing(12)
+            section = QLabel("功能工作区")
+            section.setObjectName("pageSubtitle")
+            layout.addWidget(section)
+            layout.addWidget(metrics)
+            layout.addStretch(1)
+
+
     class OxAppMainWindow(QMainWindow):
-        """只提供公共壳；#18-#21 在对应页替换当前占位内容。"""
+        """中心工作区 + 左侧导航 + 右侧状态 + 底部日志的管理终端布局。"""
 
         def __init__(self, bridge: AsyncQtBridge, client: ClientProtocolClient | None = None, parent: QWidget | None = None, logger: ClientLogger | None = None) -> None:
             super().__init__(parent)
-            self.logger = logger or ClientLogger()  # 测试/嵌入场景可注入统一日志器，也可默认静默文件输出。
-            self.client = client  # 页面通过服务接口共享同一个客户端通信实例。
-            self.load_timings: list[LoadTiming] = []  # 页面可读取每个构造阶段耗时，后续用于性能面板。
-            self.bridge = bridge  # 保存跨线程消息入口，窗口不直接依赖 Transport。
-            self.setWindowTitle("oxApp 管理客户端")  # 用户看到的公共窗口标题。
-            self.resize(1180, 760)  # 固定初始工作区，后续页面在右侧扩展。
-            self._navigation = QListWidget()  # 左侧导航只负责选择页面索引。
-            self._navigation.setFixedWidth(190)  # 左侧功能区尺寸稳定，右侧页面可独立扩展。
-            self._pages = QStackedWidget()  # 右侧页面容器按索引切换，不销毁已创建页面。
+            app = QApplication.instance()
+            if app is not None:
+                apply_workbench_theme(app)  # 测试构造窗口和正式入口使用同一套 vn.py 风格主题。
+            self.logger = logger or ClientLogger()
+            self.client = client  # 页面只依赖客户端抽象，Mock/真实 Transport 可替换。
+            self.load_timings: list[LoadTiming] = []
+            self.bridge = bridge
+            self.setWindowTitle("oxApp 管理工作台 | vn.py 风格客户端")
+            self.resize(1440, 900)
+            self.setMinimumSize(1100, 680)
+            self.setDockNestingEnabled(True)
+            self.setDockOptions(QMainWindow.DockOption.AllowNestedDocks | QMainWindow.DockOption.AnimatedDocks)
+            self._navigation = QListWidget()
+            self._navigation.setObjectName("navigationList")
+            self._pages = QStackedWidget()
             with self.logger.measure("main_window_layout", sink=self.load_timings, module="oxApp.ui"):
-                self._build_layout()  # 创建根布局、分隔线和状态栏。
+                self._build_layout()
             with self.logger.measure("main_window_pages", sink=self.load_timings, module="oxApp.ui"):
-                self._build_pages()  # 创建 #16 公共占位页，后续工单替换内容。
-            self._navigation.currentRowChanged.connect(self._pages.setCurrentIndex)  # 导航变化只改变右侧当前页。
-            bridge.state_changed.connect(self._show_connection_state)  # Qt 主线程更新连接状态栏。
-            bridge.response_received.connect(self._handle_response)  # 响应先经过 bridge，再由页面层解释 payload。
-            self._navigation.setCurrentRow(0)  # 首次展示概览页。
+                self._build_pages()
+            self._navigation.currentRowChanged.connect(self._select_page)
+            bridge.state_changed.connect(self._show_connection_state)
+            bridge.response_received.connect(self._handle_response)
+            self._navigation.setCurrentRow(0)
             self.logger.info(f"main_window_ready components={len(self.load_timings)}", module="oxApp.ui")
 
         def _build_layout(self) -> None:
-            root = QWidget(self)  # 根控件承载左右两栏，生命周期归 QMainWindow。
-            layout = QHBoxLayout(root)  # 水平布局保证左导航和右内容并排。
-            layout.setContentsMargins(8, 8, 8, 8)  # 给窗口边缘稳定留白。
-            layout.setSpacing(8)  # 导航、分隔线和页面之间保持固定间距。
-            layout.addWidget(self._navigation)  # 导航由布局接管所有权。
-            line = QFrame()  # 视觉分隔，不参与业务状态。
-            line.setFrameShape(QFrame.Shape.VLine)  # 显示竖线，帮助用户区分两栏。
-            layout.addWidget(line)  # 分隔线加入根布局。
-            layout.addWidget(self._pages, 1)  # 右侧使用伸缩因子吸收剩余空间。
-            self.setCentralWidget(root)  # QMainWindow 接管根控件释放责任。
-            self._connection_status = QLabel("未连接")  # 状态栏初始值与 Transport 初态一致。
-            status = QStatusBar(self)  # 状态栏由窗口持有。
-            status.addPermanentWidget(self._connection_status)  # 状态文本固定在右侧。
-            self.setStatusBar(status)  # 安装到窗口底部。
+            self._build_menu()
+            self._build_toolbar()
+            self._build_navigation_dock()
+            self._build_runtime_dock()
+            self._build_log_dock()
+            self.setCentralWidget(self._pages)  # 中心区只承载当前工作页，避免所有业务表格同时挤在首页。
+            self._connection_status = QLabel("连接状态: 未连接")
+            self._latency_status = QLabel("Mock | -- ms")
+            status = QStatusBar(self)
+            status.showMessage("就绪 | Mock 数据模式")
+            status.addPermanentWidget(self._latency_status)
+            status.addPermanentWidget(self._connection_status)
+            self.setStatusBar(status)
+
+        def _build_menu(self) -> None:
+            bar = self.menuBar()
+            bar.setNativeMenuBar(False)  # Linux/WSL 下保持菜单嵌入窗口，和 vn.py 的跨平台行为一致。
+            system = bar.addMenu("系统")
+            system.addAction(self._action("连接 Mock 服务", self._connect_mock))
+            system.addAction(self._action("断开服务", self._disconnect_mock))
+            system.addSeparator()
+            system.addAction(self._action("退出", self.close))
+            features = bar.addMenu("功能")
+            for index, name in enumerate(("概览", "系统管理", "用户权限", "产品资金", "风控管理")):
+                features.addAction(self._action(name, lambda checked=False, i=index: self._select_page(i)))
+            view = bar.addMenu("视图")
+            view.addAction(self._action("恢复默认布局", self._restore_layout))
+            help_menu = bar.addMenu("帮助")
+            help_menu.addAction(self._action("关于 oxApp", self._show_about))
+
+        def _build_toolbar(self) -> None:
+            toolbar = QToolBar("工具栏", self)
+            toolbar.setObjectName("mainToolbar")
+            toolbar.setMovable(False)
+            toolbar.setFloatable(False)
+            refresh = self._action("刷新当前", self._refresh_current, QStyle.StandardPixmap.SP_BrowserReload)
+            connect = self._action("连接 Mock", self._connect_mock, QStyle.StandardPixmap.SP_DialogApplyButton)
+            layout = self._action("默认布局", self._restore_layout, QStyle.StandardPixmap.SP_FileDialogDetailedView)
+            toolbar.addAction(refresh)
+            toolbar.addAction(connect)
+            toolbar.addAction(layout)
+            self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+
+        def _build_navigation_dock(self) -> None:
+            panel = QFrame()
+            panel.setObjectName("navigationPanel")
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(10, 12, 10, 10)
+            layout.setSpacing(5)
+            brand = QLabel("oxApp")
+            brand.setObjectName("brandLabel")
+            subtitle = QLabel("管理工作台")
+            subtitle.setObjectName("pageSubtitle")
+            layout.addWidget(brand)
+            layout.addWidget(subtitle)
+            layout.addSpacing(8)
+            for title in ("概览", "系统管理", "用户权限", "产品资金", "风控管理"):
+                self._navigation.addItem(QListWidgetItem(title))
+            layout.addWidget(self._navigation, 1)
+            dock = QDockWidget("功能导航", self)
+            dock.setObjectName("navigationDock")
+            dock.setWidget(panel)
+            dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+            dock.setMinimumWidth(185)
+            dock.setMaximumWidth(245)
+            self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+            self._navigation_dock = dock
+
+        def _build_runtime_dock(self) -> None:
+            dock = QDockWidget("运行状态", self)
+            dock.setObjectName("runtimeDock")
+            self._runtime_panel = RuntimePanel()
+            dock.setWidget(self._runtime_panel)
+            dock.setMinimumWidth(260)
+            dock.setMaximumWidth(360)
+            dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+            self._runtime_dock = dock
+
+        def _build_log_dock(self) -> None:
+            dock = QDockWidget("运行日志", self)
+            dock.setObjectName("logDock")
+            self._log_panel = LogPanel()
+            dock.setWidget(self._log_panel)
+            dock.setMinimumHeight(135)
+            dock.setMaximumHeight(235)
+            dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+            self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+            self._log_dock = dock
 
         def _build_pages(self) -> None:
-            self._add_page("概览", QLabel("客户端通信已就绪，等待业务页面接入"))
+            self._add_page(OverviewPage())
             if self.client is not None:
-                self._add_page("系统管理", SystemAdminPage(self.client, self.bridge, self.logger))
-                self._add_page("用户权限", UserRightsPage(self.client, self.bridge, self.logger))
-                self._add_page("产品资金", FundManagementPage(self.client, self.bridge, self.logger))
-                self._add_page("风控管理", RiskManagementPage(self.client, self.bridge, self.logger))
+                self._add_page(SystemAdminPage(self.client, self.bridge, self.logger))
+                self._add_page(UserRightsPage(self.client, self.bridge, self.logger))
+                self._add_page(FundManagementPage(self.client, self.bridge, self.logger))
+                self._add_page(RiskManagementPage(self.client, self.bridge, self.logger))
             else:
-                self._add_page("系统管理", QLabel("缺少客户端通信实例"))
-                self._add_page("用户权限", QLabel("缺少客户端通信实例"))
-                self._add_page("产品资金", QLabel("缺少客户端通信实例"))
-                self._add_page("风控管理", QLabel("缺少客户端通信实例"))
-        def _add_page(self, title: str, content: QWidget) -> None:
-            self._navigation.addItem(QListWidgetItem(title))  # 导航项索引与页面堆叠索引一一对应。
-            if isinstance(content, ServiceTablePage):  # 业务页自身带布局和状态管理，不再包一层 QLabel 容器。
+                for _ in range(4):
+                    self._add_page(QLabel("缺少客户端通信实例"))
+
+        def _add_page(self, content: QWidget) -> None:
+            if isinstance(content, ServiceTablePage):
+                page = content  # 业务页已经包含页签和请求状态，不再嵌套额外壳。
+            elif isinstance(content, QLabel):
+                content.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                page = PageContainer(content)
+            else:
                 page = content
-            else:
-                content.setAlignment(Qt.AlignmentFlag.AlignCenter)  # 占位文案居中显示。
-                page = PageContainer(content)  # 页面容器统一提供加载/空/错误/权限状态。
             self._pages.addWidget(page)
 
+        def _select_page(self, index: int) -> None:
+            if 0 <= index < self._pages.count():
+                self._pages.setCurrentIndex(index)  # 导航只切换工作区，不销毁已加载页面和请求状态。
+                self._log_panel.append("INFO", "oxApp.ui", f"切换工作区: {self._navigation.item(index).text()}")
+
+        def _refresh_current(self) -> None:
+            page = self._pages.currentWidget()
+            if hasattr(page, "_tabs") and hasattr(page, "_load_current"):
+                page._load_current(page._tabs.currentIndex())  # 复用页面现有异步请求，不阻塞 Qt 主线程。
+            self._log_panel.append("INFO", "oxApp.ui", "刷新当前工作区")
+
+        def _connect_mock(self) -> None:
+            if self.client is not None:
+                self.client.connect()
+            self._log_panel.append("INFO", "oxApp", "已发起 Mock 服务连接")
+
+        def _disconnect_mock(self) -> None:
+            if self.client is not None:
+                self.client.disconnect()
+            self._log_panel.append("INFO", "oxApp", "已断开 Mock 服务连接")
+
+        def _restore_layout(self) -> None:
+            self._navigation_dock.show()
+            self._runtime_dock.show()
+            self._log_dock.show()
+            self._log_panel.append("INFO", "oxApp.ui", "已恢复默认工作台布局")
+
+        def _show_about(self) -> None:
+            self.statusBar().showMessage("oxApp | vn.py 风格管理客户端 | Mock-first", 5000)
+
         def _show_connection_state(self, state: str, reason: str) -> None:
-            self._connection_status.setText(f"连接状态: {state} | {reason}")  # 状态和原因来自后台回调，经 Qt 主线程安全更新。
+            self._connection_status.setText(f"连接状态: {state}")
+            self._runtime_panel.set_connection(state, reason)
+            self._log_panel.append("INFO", "oxApp.transport", f"连接状态: {state} | {reason}")
 
         def _handle_response(self, response: object) -> None:
-            # #16 只验证 UI 接收路径；具体页面在 #18-#21 自己解释 payload。
-            del response  # #16 只验证事件到达，具体 payload 解释留给 #18-#21 页面。
+            del response  # 页面自行按 request_id 消费响应，窗口只保留公共状态壳。
+
+        @staticmethod
+        def _action(text: str, callback, icon: QStyle.StandardPixmap | None = None) -> QAction:
+            action = QAction(text)
+            if icon is not None:
+                action.setIcon(QApplication.style().standardIcon(icon))
+            action.triggered.connect(callback)
+            return action
+
 else:
     class OxAppMainWindow:  # type: ignore[no-redef]
         def __init__(self, *args, **kwargs) -> None:
