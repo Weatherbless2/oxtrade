@@ -49,6 +49,12 @@ class MockDataStore:
         {"log_id": "log-002", "event_time": "2026-08-24 09:00:03", "operator": "yangjh", "level": "INFO", "event": "查询系统菜单"},
         {"log_id": "log-003", "event_time": "2026-08-24 09:01:12", "operator": "alice", "level": "WARN", "event": "权限不足示例"},
     )
+    role_rights: tuple[dict[str, Any], ...] = (  # 角色权限通过 role_id/menu_id 关联用户、角色和菜单表。
+        {"right_id": "rr-001", "role_id": "r-admin", "menu_id": "m-system", "permission": "read/write", "enabled": True},
+        {"right_id": "rr-002", "role_id": "r-admin", "menu_id": "m-user", "permission": "read/write", "enabled": True},
+        {"right_id": "rr-003", "role_id": "r-operator", "menu_id": "m-fund", "permission": "read", "enabled": True},
+        {"right_id": "rr-004", "role_id": "r-viewer", "menu_id": "m-system", "permission": "read", "enabled": True},
+    )
     products: tuple[dict[str, Any], ...] = (  # 产品与 project_ids 建立资金页面的上下游关系。
         {"fund_id": "fund-001", "fund_name": "量化一号", "status": "active", "project_ids": ("project-001", "project-002")},
         {"fund_id": "fund-002", "fund_name": "稳健增强", "status": "paused", "project_ids": ("project-003",)},

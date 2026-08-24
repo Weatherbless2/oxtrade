@@ -20,3 +20,6 @@ class UserService(BaseService):
 
     def list_sites(self, **filters) -> Future[ClientResponse]:
         return self.client.request(session_id=self.session_id, msg_type="sites", func_id="page", payload=filters)  # 站点列表由 sites 资源映射到 Mock 快照。
+
+    def list_role_rights(self, **filters) -> Future[ClientResponse]:
+        return self.client.request(session_id=self.session_id, msg_type="role_rights", func_id="page", payload=filters)

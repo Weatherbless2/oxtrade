@@ -51,6 +51,7 @@ class MockServiceRouter:
             "dictionaries": "dictionaries",
             "dictionary_details": "dictionary_details",
             "system_logs": "system_logs",
+            "role_rights": "role_rights",
             "users": "users",
             "roles": "roles",
             "sites": "sites",

@@ -17,6 +17,8 @@ from .qt_bridge import AsyncQtBridge
 from ..logging import ClientLogger, LoadTiming
 from ..connection import ClientProtocolClient
 from .system_admin_page import SystemAdminPage
+from .user_rights_page import UserRightsPage
+from .table_page import ServiceTablePage
 
 
 if PYSIDE_AVAILABLE:
@@ -64,10 +66,11 @@ if PYSIDE_AVAILABLE:
             self._add_page("概览", QLabel("客户端通信已就绪，等待业务页面接入"))
             if self.client is not None:
                 self._add_page("系统管理", SystemAdminPage(self.client, self.bridge, self.logger))
+                self._add_page("用户权限", UserRightsPage(self.client, self.bridge, self.logger))
             else:
                 self._add_page("系统管理", QLabel("缺少客户端通信实例"))
+                self._add_page("用户权限", QLabel("缺少客户端通信实例"))
             placeholders = (
-                ("用户权限", "#19 将接入用户、角色、站点和权限页面"),
                 ("产品资金", "#20 将接入产品、资产和资金账号页面"),
                 ("风控管理", "#21 将接入参数和规则页面"),
             )
@@ -76,7 +79,7 @@ if PYSIDE_AVAILABLE:
 
         def _add_page(self, title: str, content: QWidget) -> None:
             self._navigation.addItem(QListWidgetItem(title))  # 导航项索引与页面堆叠索引一一对应。
-            if isinstance(content, SystemAdminPage):
+            if isinstance(content, ServiceTablePage):  # 业务页自身带布局和状态管理，不再包一层 QLabel 容器。
                 page = content
             else:
                 content.setAlignment(Qt.AlignmentFlag.AlignCenter)  # 占位文案居中显示。
