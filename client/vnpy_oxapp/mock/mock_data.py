@@ -79,6 +79,16 @@ class MockDataStore:
         {"rule_id": "risk-003", "rule_name": "自成交检查", "enabled": True, "limit": 0, "unit": "次", "scope": "account"},
         {"rule_id": "risk-004", "rule_name": "紧急停止", "enabled": False, "limit": 0, "unit": "开关", "scope": "system"},
     )
+    risk_parameters: tuple[dict[str, Any], ...] = (  # 参数页展示规则生效范围和最近更新时间。
+        {"parameter_id": "param-001", "parameter_name": "默认单笔限额", "value": "500000", "unit": "CNY", "scope": "account", "updated_by": "yangjh"},
+        {"parameter_id": "param-002", "parameter_name": "撤单窗口", "value": "20", "unit": "次/分钟", "scope": "user", "updated_by": "yangjh"},
+        {"parameter_id": "param-003", "parameter_name": "风控模式", "value": "严格", "unit": "枚举", "scope": "system", "updated_by": "alice"},
+    )
+    risk_events: tuple[dict[str, Any], ...] = (  # 异常事件用于验证 WARN/ERROR 展示，不表示真实交易事件。
+        {"event_id": "re-001", "event_time": "2026-08-24 09:12:01", "rule_id": "risk-001", "level": "INFO", "message": "单笔限额检查通过", "handled": True},
+        {"event_id": "re-002", "event_time": "2026-08-24 09:13:22", "rule_id": "risk-002", "level": "WARN", "message": "撤单频率接近阈值", "handled": False},
+        {"event_id": "re-003", "event_time": "2026-08-24 09:14:05", "rule_id": "risk-003", "level": "ERROR", "message": "检测到疑似自成交", "handled": False},
+    )
 
     def resource(self, name: str) -> tuple[dict[str, Any], ...]:
         value = getattr(self, name, None)  # 路由按资源名动态取快照字段。

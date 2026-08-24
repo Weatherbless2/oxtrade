@@ -60,6 +60,8 @@ class MockServiceRouter:
             "accounts": "accounts",
             "fund_project_links": "fund_project_links",
             "risk": "risk_rules",
+            "risk_parameters": "risk_parameters",
+            "risk_events": "risk_events",
         }
         try:
             rows = list(self.store.resource(resource_map[service]))  # 复制为可筛选列表，不能修改 frozen store 的 tuple。

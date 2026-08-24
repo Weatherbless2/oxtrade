@@ -20,6 +20,7 @@ from .system_admin_page import SystemAdminPage
 from .user_rights_page import UserRightsPage
 from .table_page import ServiceTablePage
 from .fund_management_page import FundManagementPage
+from .risk_management_page import RiskManagementPage
 
 
 if PYSIDE_AVAILABLE:
@@ -69,16 +70,12 @@ if PYSIDE_AVAILABLE:
                 self._add_page("系统管理", SystemAdminPage(self.client, self.bridge, self.logger))
                 self._add_page("用户权限", UserRightsPage(self.client, self.bridge, self.logger))
                 self._add_page("产品资金", FundManagementPage(self.client, self.bridge, self.logger))
+                self._add_page("风控管理", RiskManagementPage(self.client, self.bridge, self.logger))
             else:
                 self._add_page("系统管理", QLabel("缺少客户端通信实例"))
                 self._add_page("用户权限", QLabel("缺少客户端通信实例"))
                 self._add_page("产品资金", QLabel("缺少客户端通信实例"))
-            placeholders = (
-                ("风控管理", "#21 将接入参数和规则页面"),
-            )
-            for title, placeholder in placeholders:
-                self._add_page(title, QLabel(placeholder))
-
+                self._add_page("风控管理", QLabel("缺少客户端通信实例"))
         def _add_page(self, title: str, content: QWidget) -> None:
             self._navigation.addItem(QListWidgetItem(title))  # 导航项索引与页面堆叠索引一一对应。
             if isinstance(content, ServiceTablePage):  # 业务页自身带布局和状态管理，不再包一层 QLabel 容器。
