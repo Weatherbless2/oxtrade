@@ -47,7 +47,7 @@ flowchart LR
 | --- | --- | --- |
 | 登录 | `users.login` | 校验 Mock 用户和密码，返回临时会话快照。 |
 | 管理查询 | `page` | 覆盖菜单、字典、服务状态、托管服务、用户/角色/权限、产品/项目/账号关联、风控等资源的分页、筛选和空结果。 |
-| CRUD | `create/update/transition` | Mock LBM 生成主键、更新内存快照、写入 Mock 审计日志；页面成功后重新查询。 |
+| CRUD | `create/update/transition/delete` | Mock LBM 生成主键、更新/删除内存快照、写入 Mock 审计日志；页面成功后重新查询；审计日志、服务状态和风控事件禁止删除。 |
 | 权限/服务错误 | `force_unauthorized/force_error` | 返回稳定客户端状态，不把失败伪装成空列表。 |
 
 Mock 后端固定使用一个 Query Worker。`fork` 后的 LBM 内存不能在多个 Worker 之间自动共享，因此多 Worker 会让 CRUD 看见不同副本，不能用来模拟真实数据库一致性。

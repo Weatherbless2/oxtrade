@@ -23,6 +23,7 @@ class RiskManagementPage(ServiceTablePage):
                 editable_fields=(("parameter_name", "参数名称"), ("value", "值"), ("unit", "单位"), ("scope", "范围")),
                 creator=lambda record: service.create("risk_parameters", record),
                 updater=lambda record_id, changes: service.update("risk_parameters", record_id, changes),
+                deleter=lambda record_id: service.delete("risk_parameters", record_id),
             ),
             TableSpec(
                 "风控规则",
@@ -34,6 +35,7 @@ class RiskManagementPage(ServiceTablePage):
                 creator=lambda record: service.create("risk", record),
                 updater=lambda record_id, changes: service.update("risk", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("risk", record_id, state),
+                deleter=lambda record_id: service.delete("risk", record_id),
             ),
             TableSpec(
                 "异常事件",

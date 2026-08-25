@@ -58,6 +58,7 @@ std::uint32_t function_id_for_operation(std::string_view operation) noexcept {
     if (operation == "cancel_order") return kMockCancelOrderFunctionId;
     if (operation == "fill_order") return kMockFillOrderFunctionId;
     if (operation == "logout") return kMockLogoutFunctionId;
+    if (operation == "delete") return kMockDeleteFunctionId;
     return 0;
 }
 

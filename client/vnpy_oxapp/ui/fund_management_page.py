@@ -25,6 +25,7 @@ class FundManagementPage(ServiceTablePage):
                 creator=lambda record: service.create("funds", record),
                 updater=lambda record_id, changes: service.update("funds", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("funds", record_id, state),
+                deleter=lambda record_id: service.delete("funds", record_id),
             ),
             TableSpec(
                 "项目/资产",
@@ -36,6 +37,7 @@ class FundManagementPage(ServiceTablePage):
                 creator=lambda record: service.create("projects", record),
                 updater=lambda record_id, changes: service.update("projects", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("projects", record_id, state),
+                deleter=lambda record_id: service.delete("projects", record_id),
             ),
             TableSpec(
                 "资金账号",
@@ -46,6 +48,7 @@ class FundManagementPage(ServiceTablePage):
                 creator=lambda record: service.create("accounts", record),
                 updater=lambda record_id, changes: service.update("accounts", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("accounts", record_id, state),
+                deleter=lambda record_id: service.delete("accounts", record_id),
             ),
             TableSpec(
                 "资产账号关联",
@@ -57,6 +60,7 @@ class FundManagementPage(ServiceTablePage):
                 creator=lambda record: service.create("fund_account_links", record),
                 updater=lambda record_id, changes: service.update("fund_account_links", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("fund_account_links", record_id, state),
+                deleter=lambda record_id: service.delete("fund_account_links", record_id),
             ),
         )
         super().__init__(client, bridge, logger, specs, parent)

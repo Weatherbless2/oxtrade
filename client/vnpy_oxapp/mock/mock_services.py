@@ -20,6 +20,8 @@ RESOURCE_MAP = {
     "risk_events": "risk_events",
 }
 
+NON_DELETABLE_RESOURCES = {"system_logs", "service_status", "risk_events"}
+
 
 class MockServiceError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
@@ -64,6 +66,8 @@ class MockServiceRouter:
             return self._update(service, payload)
         if operation == "transition":
             return self._transition(service, payload)
+        if operation == "delete":
+            return self._delete(service, payload)
         raise MockServiceError("not_supported", f"unsupported operation: {service}.{operation}")
 
     def _resource_name(self, service: str) -> str:
@@ -142,6 +146,22 @@ class MockServiceRouter:
         primary_key, _ = RESOURCE_IDENTITIES[resource]
         self._append_audit("yangjh", "INFO", f"Mock 状态变更 {service}: {row[primary_key]} -> {state}")
         return {"item": dict(row), "message": "mock state transitioned", "source": "mock"}
+
+    def _delete(self, service: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        resource = self._resource_name(service)
+        if resource in NON_DELETABLE_RESOURCES:
+            raise MockServiceError("validation_error", f"mock resource cannot be deleted: {resource}")
+        primary_key, _ = RESOURCE_IDENTITIES[resource]
+        record_id = str(payload.get("record_id", "")).strip()
+        if not record_id:
+            raise MockServiceError("validation_error", f"{primary_key} is required")
+        rows = self.store.mutable_resource(resource)
+        for index, row in enumerate(rows):
+            if str(row.get(primary_key)) == record_id:
+                deleted = dict(rows.pop(index))  # 先复制再移除，响应与审计不依赖已失效的列表引用。
+                self._append_audit("yangjh", "INFO", f"Mock 删除 {service}: {record_id}")
+                return {"item": deleted, "message": "mock record deleted", "source": "mock"}
+        raise MockServiceError("not_found", f"mock {resource} record was not found")
 
     def _find_row(self, resource: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         primary_key, _ = RESOURCE_IDENTITIES[resource]

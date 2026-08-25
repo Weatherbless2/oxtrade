@@ -48,3 +48,6 @@ class BaseService:
 
     def transition(self, resource: str, record_id: str, state: str) -> Future[ClientResponse]:
         return self.request_resource(resource, "transition", {"record_id": record_id, "state": state})
+
+    def delete(self, resource: str, record_id: str) -> Future[ClientResponse]:
+        return self.request_resource(resource, "delete", {"record_id": record_id})  # 删除仍走后端审计和权限链路，页面不直接移除表格行。

@@ -15,7 +15,7 @@ try:
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import (
-        QDialog, QDialogButtonBox, QFileDialog, QComboBox, QFormLayout, QFrame,
+        QDialog, QDialogButtonBox, QFileDialog, QComboBox, QFormLayout, QFrame, QMessageBox,
         QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QTabWidget,
         QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
     )
@@ -29,6 +29,7 @@ Loader = Callable[[dict[str, Any]], Any]
 Creator = Callable[[dict[str, Any]], Any]
 Updater = Callable[[str, dict[str, Any]], Any]
 Transitioner = Callable[[str, str], Any]
+Deleter = Callable[[str], Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +43,7 @@ class TableSpec:
     creator: Creator | None = None
     updater: Updater | None = None
     transitioner: Transitioner | None = None
+    deleter: Deleter | None = None
     transition_tooltip: str = "切换选中记录状态"
 
 
@@ -63,6 +65,7 @@ if PYSIDE_AVAILABLE:
         create_requested = Signal(dict)
         update_requested = Signal(str, dict)
         transition_requested = Signal(str, str)
+        delete_requested = Signal(str)
 
         def __init__(self, spec: TableSpec, parent: QWidget | None = None) -> None:
             super().__init__(parent)
@@ -94,6 +97,10 @@ if PYSIDE_AVAILABLE:
             self._transition.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
             self._transition.setToolTip(spec.transition_tooltip)
             self._transition.clicked.connect(self._request_transition)
+            self._delete = QToolButton()
+            self._delete.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_TrashIcon))
+            self._delete.setToolTip("删除选中记录")
+            self._delete.clicked.connect(self._request_delete)
             self._previous = QToolButton()
             self._previous.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_ArrowBack))
             self._previous.setToolTip("上一页")
@@ -106,6 +113,7 @@ if PYSIDE_AVAILABLE:
             self._create.setVisible(has_crud and spec.creator is not None)
             self._edit.setVisible(has_crud and spec.updater is not None)
             self._transition.setVisible(bool(self._primary_key and spec.transitioner is not None))
+            self._delete.setVisible(bool(self._primary_key and spec.deleter is not None))
             self._summary = QLabel("未加载")
             self._summary.setObjectName("tableSummary")
             self._table = QTableWidget(0, len(self.columns))
@@ -128,6 +136,7 @@ if PYSIDE_AVAILABLE:
             header.addWidget(self._create)
             header.addWidget(self._edit)
             header.addWidget(self._transition)
+            header.addWidget(self._delete)
             header.addWidget(self._previous)
             header.addWidget(self._next)
             header.addWidget(refresh)
@@ -198,7 +207,7 @@ if PYSIDE_AVAILABLE:
             self._clear_rows(f"无访问权限：{detail}。可调整筛选条件或点击刷新")  # 权限失败不能继续保留可能敏感的旧数据，但操作入口仍必须可见。
 
         def set_failure(self, message: str) -> None:
-            self._summary.setText(f"请求失败：{message or '未知错误'}。可调整筛选条件或点击刷新")
+            self._clear_rows(f"请求失败：{message or '未知错误'}。可调整筛选条件或点击刷新")  # 失败时清除旧快照，避免用户把过期数据当成当前结果。
 
         def _clear_rows(self, summary: str) -> None:
             self._rows.clear()
@@ -290,6 +299,24 @@ if PYSIDE_AVAILABLE:
                 state = "frozen" if str(record.get("status", "active")) == "active" else "active"
             self.transition_requested.emit(record_id, state)  # 状态切换也必须走后端审计和权限校验，不能只改当前单元格文本。
 
+        def _request_delete(self) -> None:
+            record = self._selected_record()
+            if record is None:
+                return
+            record_id = str(record.get(self._primary_key, ""))
+            if not record_id:
+                self.set_failure("选中记录缺少主键")
+                return
+            answer = QMessageBox.question(
+                self,
+                "确认删除",
+                f"确认删除记录 {record_id}？删除后需要重新查询才能恢复显示。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self.delete_requested.emit(record_id)  # 二次确认后才交给 Service，避免误触造成业务状态变化。
+
         def _edit_values(self, title: str, record: dict[str, Any]) -> dict[str, str] | None:
             dialog = QDialog(self)
             dialog.setWindowTitle(title)
@@ -340,6 +367,7 @@ if PYSIDE_AVAILABLE:
                 panel.create_requested.connect(lambda values, index=index: self._create(index, values))
                 panel.update_requested.connect(lambda record_id, values, index=index: self._update(index, record_id, values))
                 panel.transition_requested.connect(lambda record_id, state, index=index: self._transition(index, record_id, state))
+                panel.delete_requested.connect(lambda record_id, index=index: self._delete(index, record_id))
                 self._panels[index] = (container, panel, spec.title)
                 self._tabs.addTab(container, spec.title)  # 先登记绑定再触发 Qt currentChanged，避免初始化竞态。
             bridge.response_received.connect(self._on_response)
@@ -391,6 +419,11 @@ if PYSIDE_AVAILABLE:
             if spec.transitioner is not None:
                 self._submit_mutation(index, "transition", spec.transitioner(record_id, state))
 
+        def _delete(self, index: int, record_id: str) -> None:
+            spec = self._specs[index]
+            if spec.deleter is not None:
+                self._submit_mutation(index, "delete", spec.deleter(record_id))
+
         def _submit_mutation(self, index: int, action: str, future: Any) -> None:
             request_id = getattr(future, "request_id", "")
             if not request_id:
@@ -425,11 +458,19 @@ if PYSIDE_AVAILABLE:
             else:
                 payload = response.payload
                 items = payload.get("items", [])
+                page = int(payload.get("page", 1))
+                page_size = int(payload.get("page_size", max(1, len(items))))
+                total = int(payload.get("total", len(items)))
+                if not items and page > 1 and total > 0:
+                    panel._page = min(page - 1, max(1, (total + max(1, page_size) - 1) // max(1, page_size)))
+                    self.logger.info(f"page_recovered page={title} reason=last_row_deleted", module="oxApp.ui")
+                    self._load(binding.spec_index)  # 删除最后一行后自动回到仍有数据的上一页，避免停在空白尾页。
+                    return
                 panel.set_rows(
                     items,
-                    int(payload.get("total", len(items))),
-                    int(payload.get("page", 1)),
-                    int(payload.get("page_size", max(1, len(items)))),
+                    total,
+                    page,
+                    page_size,
                 )
                 if not items:
                     panel.set_empty()

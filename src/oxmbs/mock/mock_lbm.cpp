@@ -259,6 +259,7 @@ MockStore make_store() {
         store.resources["sites"].push_back({
             {"site_id", "site-" + padded(index)}, {"site_name", "Mock Site " + padded(index, 2)},
             {"ip_policy", index % 2 == 0 ? "allowlist" : "internal"}, {"multi_login", index % 2 == 0 ? "false" : "true"},
+            {"status", index == 6 ? "frozen" : "active"},
         });
     }
     for (int index = 1; index <= 20; ++index) {
@@ -548,6 +549,30 @@ MockResult handle_transition(const std::string& resource, const Form& form) {
     return failure("service_error", "mock record was not found");
 }
 
+MockResult handle_delete(const std::string& resource, const Form& form) {
+    if (resource == "system_logs" || resource == "service_status" || resource == "risk_events") {
+        return failure("validation_error", "mock resource is protected from deletion");  // 审计日志、运行状态和风控事件保留不可删除语义。
+    }
+    const auto identity = identity_for_resource(resource);
+    const std::string record_id = form_value(form, "record_id");
+    if (identity.first.empty() || record_id.empty()) {
+        return failure("validation_error", "delete requires a configured record_id");
+    }
+    Records& rows = store().resources[resource];
+    for (auto iterator = rows.begin(); iterator != rows.end(); ++iterator) {
+        if (iterator->at(identity.first) != record_id) {
+            continue;
+        }
+        const Record deleted = *iterator;  // 先复制响应快照，再删除容器元素，避免引用失效。
+        rows.erase(iterator);
+        append_audit("Mock delete " + resource + " " + record_id);
+        MockResult result;
+        result.payload_json = "{\"item\":" + json_record(deleted) + ",\"message\":\"mock record deleted\",\"source\":\"mock-lbm\"}";
+        return result;
+    }
+    return failure("not_found", "mock record was not found");
+}
+
 MockResult dispatch(const Form& form) {
     if (form_value(form, "force_unauthorized") == "true") {
         return failure("unauthorized", "mock request was denied", true);
@@ -586,6 +611,9 @@ MockResult dispatch(const Form& form) {
     }
     if (operation == "transition") {
         return handle_transition(resource, form);
+    }
+    if (operation == "delete") {
+        return handle_delete(resource, form);
     }
     return failure("service_error", "unsupported mock operation");
 }

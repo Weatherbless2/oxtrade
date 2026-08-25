@@ -45,6 +45,13 @@ class TableCrudInteractionTest(unittest.TestCase):
         changed = next(row for row in transport.service_router.store.resource("users") if row["user_id"] == created["user_id"])
         self.assertEqual("UI Updated User", changed["display_name"])
         self.assertEqual("frozen", changed["status"])
+        page._delete(0, created["user_id"])
+        for _ in range(30):
+            app.processEvents()
+            time.sleep(0.01)
+        self.assertFalse(any(row["user_id"] == created["user_id"] for row in transport.service_router.store.resource("users")))
+        page._tabs.widget(0)._content.set_failure("mock query failed")
+        self.assertEqual(0, page._tabs.widget(0)._content._table.rowCount())
         window.close()
         client.disconnect()
         app.processEvents()

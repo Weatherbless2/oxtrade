@@ -29,6 +29,16 @@ class MockServiceRouterTest(unittest.TestCase):
         self.assertEqual("frozen", frozen["item"]["status"])
         self.assertGreater(self.router.handle("system_logs", "page", {"page": 1, "page_size": 5})["total"], 60)  # 变更会留下 Mock 审计日志。
 
+    def test_delete_removes_mutable_record_but_protects_audit_resources(self) -> None:
+        created = self.router.handle("users", "create", {"record": {"user_name": "delete-me"}})
+        user_id = created["item"]["user_id"]
+        deleted = self.router.handle("users", "delete", {"record_id": user_id})
+        self.assertEqual(user_id, deleted["item"]["user_id"])
+        self.assertEqual(0, self.router.handle("users", "page", {"query": user_id})["total"])
+        with self.assertRaises(MockServiceError) as context:
+            self.router.handle("system_logs", "delete", {"record_id": "log-0001"})
+        self.assertEqual("validation_error", context.exception.code)
+
     def test_explicit_failures_are_not_reported_as_success(self) -> None:
         with self.assertRaises(MockServiceError) as unauthorized:  # 主动制造权限拒绝，验证不能伪装为空列表。
             self.router.handle("users", "page", {"force_unauthorized": True})

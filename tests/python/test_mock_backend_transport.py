@@ -96,3 +96,23 @@ class MockBackendTransportTest(unittest.TestCase):
             self.assertTrue(response.is_success, resource)
             self.assertEqual(expected_total, response.payload["total"], resource)
             self.assertIn(identity, response.payload["items"][0], resource)
+
+    def test_delete_user_is_processed_by_cpp_mock_lbm(self) -> None:
+        created = self.client.request(
+            session_id="mock-session", msg_type="users", func_id="create",
+            payload={"record": {"user_name": "cpp-delete-user", "display_name": "Delete Through IPC"}},
+        ).result(timeout=2)
+        user_id = created.payload["item"]["user_id"]
+        deleted = self.client.request(
+            session_id="mock-session", msg_type="users", func_id="delete", payload={"record_id": user_id},
+        ).result(timeout=2)
+        self.assertTrue(deleted.is_success)
+        self.assertEqual(user_id, deleted.payload["item"]["user_id"])
+        remaining = self.client.request(
+            session_id="mock-session", msg_type="users", func_id="page", payload={"query": user_id},
+        ).result(timeout=2)
+        self.assertEqual(0, remaining.payload["total"])
+        protected = self.client.request(
+            session_id="mock-session", msg_type="system_logs", func_id="delete", payload={"record_id": "log-0001"},
+        ).result(timeout=2)
+        self.assertEqual(ErrorCode.VALIDATION_ERROR, protected.error_code)

@@ -25,6 +25,7 @@ class SystemAdminPage(ServiceTablePage):
                 creator=lambda record: service.create("system", record),
                 updater=lambda record_id, changes: service.update("system", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("system", record_id, state),
+                deleter=lambda record_id: service.delete("system", record_id),
             ),
             TableSpec(
                 "数据字典",
@@ -36,6 +37,7 @@ class SystemAdminPage(ServiceTablePage):
                 creator=lambda record: service.create("dictionaries", record),
                 updater=lambda record_id, changes: service.update("dictionaries", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("dictionaries", record_id, state),
+                deleter=lambda record_id: service.delete("dictionaries", record_id),
             ),
             TableSpec(
                 "字典明细",
@@ -47,6 +49,7 @@ class SystemAdminPage(ServiceTablePage):
                 creator=lambda record: service.create("dictionary_details", record),
                 updater=lambda record_id, changes: service.update("dictionary_details", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("dictionary_details", record_id, state),
+                deleter=lambda record_id: service.delete("dictionary_details", record_id),
             ),
             TableSpec(
                 "在线日志",

@@ -273,7 +273,7 @@ private:
             oxmbs::mock::kMockPageFunctionId, oxmbs::mock::kMockHeartbeatFunctionId,
             oxmbs::mock::kMockLoginFunctionId, oxmbs::mock::kMockCreateFunctionId,
             oxmbs::mock::kMockUpdateFunctionId, oxmbs::mock::kMockTransitionFunctionId,
-            oxmbs::mock::kMockLogoutFunctionId,
+            oxmbs::mock::kMockLogoutFunctionId, oxmbs::mock::kMockDeleteFunctionId,
         };
         for (const auto message_type : message_types) {
             for (const auto function_id : function_ids) {

@@ -25,27 +25,31 @@ class UserRightsPage(ServiceTablePage):
                 creator=lambda record: service.create("users", record),
                 updater=lambda record_id, changes: service.update("users", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("users", record_id, state),
+                deleter=lambda record_id: service.delete("users", record_id),
             ),
             TableSpec(
                 "角色管理",
                 (("role_id", "角色编号"), ("role_name", "角色名称"), ("status", "状态"), ("permission_count", "权限数量")),
                 lambda filters: service.list_roles(**filters),
-                (("全部", ""), ("启用", "active")),
+                (("全部", ""), ("启用", "active"), ("冻结", "frozen")),
                 primary_key="role_id",
                 editable_fields=(("role_name", "角色名称"),),
                 creator=lambda record: service.create("roles", record),
                 updater=lambda record_id, changes: service.update("roles", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("roles", record_id, state),
+                deleter=lambda record_id: service.delete("roles", record_id),
             ),
             TableSpec(
                 "站点管理",
-                (("site_id", "站点编号"), ("site_name", "站点名称"), ("ip_policy", "IP 策略"), ("multi_login", "允许多点登录")),
+                (("site_id", "站点编号"), ("site_name", "站点名称"), ("ip_policy", "IP 策略"), ("multi_login", "允许多点登录"), ("status", "状态")),
                 lambda filters: service.list_sites(**filters),
+                (("全部", ""), ("启用", "active"), ("冻结", "frozen")),
                 primary_key="site_id",
                 editable_fields=(("site_name", "站点名称"), ("ip_policy", "IP 策略")),
                 creator=lambda record: service.create("sites", record),
                 updater=lambda record_id, changes: service.update("sites", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("sites", record_id, state),
+                deleter=lambda record_id: service.delete("sites", record_id),
             ),
             TableSpec(
                 "角色菜单权限",
@@ -57,6 +61,7 @@ class UserRightsPage(ServiceTablePage):
                 creator=lambda record: service.create("role_rights", record),
                 updater=lambda record_id, changes: service.update("role_rights", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("role_rights", record_id, state),
+                deleter=lambda record_id: service.delete("role_rights", record_id),
             ),
             TableSpec(
                 "托管服务",
@@ -69,6 +74,7 @@ class UserRightsPage(ServiceTablePage):
                 creator=lambda record: service.create("cololist", record),
                 updater=lambda record_id, changes: service.update("cololist", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("cololist", record_id, state),
+                deleter=lambda record_id: service.delete("cololist", record_id),
             ),
             TableSpec(
                 "用户菜单权限",
@@ -80,6 +86,7 @@ class UserRightsPage(ServiceTablePage):
                 creator=lambda record: service.create("user_menu_rights", record),
                 updater=lambda record_id, changes: service.update("user_menu_rights", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("user_menu_rights", record_id, state),
+                deleter=lambda record_id: service.delete("user_menu_rights", record_id),
             ),
             TableSpec(
                 "产品权限",
@@ -91,6 +98,7 @@ class UserRightsPage(ServiceTablePage):
                 creator=lambda record: service.create("fund_rights", record),
                 updater=lambda record_id, changes: service.update("fund_rights", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("fund_rights", record_id, state),
+                deleter=lambda record_id: service.delete("fund_rights", record_id),
             ),
             TableSpec(
                 "资产权限",
@@ -102,6 +110,7 @@ class UserRightsPage(ServiceTablePage):
                 creator=lambda record: service.create("project_rights", record),
                 updater=lambda record_id, changes: service.update("project_rights", record_id, changes),
                 transitioner=lambda record_id, state: service.transition("project_rights", record_id, state),
+                deleter=lambda record_id: service.delete("project_rights", record_id),
             ),
         )
         super().__init__(client, bridge, logger, specs, parent)

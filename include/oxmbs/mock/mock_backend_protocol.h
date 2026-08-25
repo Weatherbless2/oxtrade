@@ -29,6 +29,7 @@ constexpr std::uint32_t kMockPlaceOrderFunctionId{12};
 constexpr std::uint32_t kMockCancelOrderFunctionId{13};
 constexpr std::uint32_t kMockFillOrderFunctionId{14};
 constexpr std::uint32_t kMockLogoutFunctionId{15};
+constexpr std::uint32_t kMockDeleteFunctionId{16};
 
 struct MockRoute {
     std::uint32_t message_type{0};
