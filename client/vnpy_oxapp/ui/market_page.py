@@ -6,13 +6,14 @@ from typing import Any
 
 from ..connection import ClientProtocolClient
 from ..logging import ClientLogger
+from ..market.hub import MarketHub
 from ..message import ClientResponse
 from ..services.market_service import MarketService
 from .qt_bridge import AsyncQtBridge
 from .table_page import ServiceTablePage, TableSpec
 
 try:
-    from PySide6.QtCore import Signal
+    from PySide6.QtCore import QTimer, Signal
     from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
     PYSIDE_AVAILABLE = True
 except ImportError:
@@ -21,26 +22,31 @@ except ImportError:
 
 if PYSIDE_AVAILABLE:
     class MarketPage(QWidget):
-        """行情页面通过 MarketService 请求 Mock 高频网关，不直接读取本地行情数据。"""
+        """行情页面通过 MarketService 读取快照，不直接读取 Socket 或行情线程中的可变数据。"""
 
         subscription_changed = Signal(str)
 
-        def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, session="mock-session", parent=None) -> None:
+        def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, session="mock-session", market_hub: MarketHub | None = None, parent=None) -> None:
             super().__init__(parent)
             self.bridge = bridge
             self.logger = logger
-            self.service = MarketService(client, session)
+            self.market_hub = market_hub
+            self.service = MarketService(client, session, market_hub)
             self._pending: set[str] = set()
+            self._hub_unsubscribers: list[Any] = []
+            self._refresh_timer = QTimer(self)
+            self._refresh_timer.setSingleShot(True)
+            self._refresh_timer.timeout.connect(self._refresh_from_market)  # 高频事件先合并，单个 Tick 不应逐条触发表格重绘。
             self._symbols = QComboBox()
             for symbol, name in (
                 ("000001.SZ", "平安银行"), ("600000.SH", "浦发银行"), ("600519.SH", "贵州茅台"),
-                ("000300.SH", "沪深300"), ("510300.SH", "300ETF"), ("IF2609.CFX", "IF2609"),
+                ("000300.SZ", "沪深300"), ("510300.SH", "300ETF"), ("IF2609.CFX", "IF2609"),
                 ("IC2609.CFX", "IC2609"), ("159915.SZ", "创业板ETF"),
             ):
                 self._symbols.addItem(f"{symbol}  {name}", symbol)
-            subscribe = QPushButton("订阅 Mock 行情")
+            subscribe = QPushButton("订阅行情")
             subscribe.clicked.connect(self._subscribe)
-            self._status = QLabel("行情源：MockMarketGateway | 未订阅")
+            self._status = QLabel("行情源：正在初始化")
             self._status.setObjectName("tableSummary")
             toolbar_layout = QHBoxLayout()
             toolbar_layout.setContentsMargins(0, 0, 0, 0)
@@ -87,6 +93,15 @@ if PYSIDE_AVAILABLE:
             layout.addWidget(toolbar)
             layout.addWidget(self._tables, 1)
             bridge.response_received.connect(self._on_response)
+            bridge.market_event_received.connect(self._on_market_event)
+            bridge.market_state_changed.connect(self._on_market_state)
+            if self.market_hub is not None:
+                self._hub_unsubscribers.append(self.market_hub.add_event_listener(bridge.publish_market_event))
+                self._hub_unsubscribers.append(self.market_hub.add_state_listener(
+                    lambda status: bridge.publish_market_state(status.state.value, f"{status.source} | {status.reason}"),
+                ))  # Hub 在后台线程通知 Qt bridge，页面自身绝不注册跨线程 QWidget 回调。
+            else:
+                self._status.setText("行情源：MockMarketGateway | 未订阅")
             self._symbols.currentIndexChanged.connect(self._refresh_selected_symbol)  # 表格对象已就绪后再监听选择变化，避免构造期信号访问未创建成员。
             self._set_symbol_filter()
             self._tables._load(0)  # ServiceTablePage 构造时已请求过未筛选快照；此处发起当前标的筛选的正式初始请求。
@@ -126,11 +141,39 @@ if PYSIDE_AVAILABLE:
                 return
             self._pending.discard(response.request_id)
             if response.is_success:
-                self._status.setText(f"行情源：MockMarketGateway | 已订阅 {response.payload.get('symbols', '当前标的')}")
+                source = response.payload.get("source", "MockMarketGateway")
+                self._status.setText(f"行情源：{source} | 已订阅 {response.payload.get('symbols', '当前标的')}")
                 self.subscription_changed.emit(str(response.payload.get("symbols", "")))
                 self._load_current(self._tabs.currentIndex())
             else:
                 self._status.setText(f"订阅失败：{response.error_message}")
+
+        def _on_market_event(self, event: object) -> None:
+            if self.market_hub is None or not hasattr(event, "symbol"):
+                return
+            selected = str(self._symbols.currentData() or "")
+            current_tab = self._tabs.currentIndex()
+            if current_tab != 0 and getattr(event, "symbol", "") != selected:
+                return  # Tick/K线/盘口只因当前标的更新；总行情表才响应任意订阅标的。
+            if not self._refresh_timer.isActive():
+                self._refresh_timer.start(self.market_hub.ui_refresh_ms)  # 例如 200ms 内多个 Tick 合并为一次快照查询和表格刷新。
+
+        def _on_market_state(self, state: str, reason: str) -> None:
+            if self.market_hub is None:
+                return
+            metrics = self.market_hub.feed_status.metrics
+            self._status.setText(
+                f"行情源：{reason} | 状态：{state} | 重连 {metrics.reconnects} | 坏包 {metrics.bad_payloads}",
+            )
+
+        def _refresh_from_market(self) -> None:
+            self._load_current(self._tabs.currentIndex())  # 定时器运行在 Qt 主线程，Service 从 Hub 快照读取而不接触行情 Socket。
+
+        def closeEvent(self, event) -> None:
+            for unsubscribe in self._hub_unsubscribers:
+                unsubscribe()
+            self._hub_unsubscribers.clear()
+            super().closeEvent(event)
 else:
     class MarketPage:  # type: ignore[no-redef]
         def __init__(self, *args, **kwargs) -> None:

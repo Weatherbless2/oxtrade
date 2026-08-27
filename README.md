@@ -1,10 +1,11 @@
 # oxApp
 
-`oxApp` 是 UltraQuant 平台的 Qt 桌面客户端工程。本分支 `feature/24-mock-end-to-end`
-用于在真实数据层工单 #9-#13 暂停期间，先把最终架构中客户端可见的业务流程用 Mock 数据跑通。
+`oxApp` 是 UltraQuant 平台的 Qt 桌面客户端工程。本分支 `feature/14-market-routing`
+在 #24 Mock 端到端基线上增加开发版行情接入：优先连接已有 QuantFabric PyTdx Bridge，
+Bridge 不可用时自动回退 Mock 行情，保证客户端可离线演示。
 
 > **重要边界**：本分支的登录、权限、行情、资金、成交和风控结果全部是 `Mock-only`。
-> 它们不代表真实登录、真实授权、真实数据库落库、真实行情、真实柜台报单或真实风控执行，
+> 它们不代表真实登录、真实授权、真实数据库落库、正式生产行情、真实柜台报单或真实风控执行，
 > 不会连接生产柜台、交易所或数据库。
 
 ## 当前状态
@@ -15,7 +16,7 @@
 | 管理功能 | 菜单、字典、日志、服务状态、用户、角色、站点、托管服务和权限关系 Mock 闭环 |
 | 产品资金 | 产品、项目、资金账号、资产-资金账号关联 Mock 查询和 CRUD |
 | 风控 | 参数、规则、事件 Mock 查询、编辑、启停/处理 |
-| 行情 | 报价、Tick、1 分钟 K 线、盘口和订阅 Mock 数据 |
+| 行情 | 报价、Tick、1 分钟 K 线、五档盘口和订阅；支持 PyTdx Bridge 开发接入及 Mock 自动回退 |
 | 交易 | 限价委托、数量校验、资金/仓位冻结、撤单、模拟成交和查询 |
 | 后端基础设施 | 管理类请求实际经过 #1-#8 的路由、System V IPC、Query Worker、动态 Mock LBM |
 | 正式后端 | #9-#13 数据访问层、正式 LBM、数据库和正式 HP-Socket 尚未接入 |
@@ -63,6 +64,27 @@ flowchart TB
 
 行情和交易故意不进入慢查询 IPC；它们只共享客户端请求关联和错误模型，避免把高频链路与低频管理查询混在一起。
 
+### 开发版行情链路
+
+```mermaid
+flowchart LR
+    TDX[通达信行情服务器] --> BR[QuantFabric PyTdx Bridge\nJSON-lines :19001]
+    BR --> PF[PyTdxJsonLineFeed]
+    MF[MockMarketFeed] -. Bridge 超时回退 .-> FH[FallbackMarketFeed]
+    PF --> FH
+    FH --> HUB[MarketHub\n标准化、去重、乱序保护\n有界 Tick 缓冲、分钟 K 线]
+    HUB --> SVC[MarketService]
+    HUB --> QT[AsyncQtBridge\nQt queued signal]
+    SVC --> UI[行情页快照查询]
+    QT --> UI
+    IPC[低频 System V IPC / Query Worker] -. 禁止进入 .-> HUB
+```
+
+`PyTdxJsonLineFeed` 只消费已有 Bridge 的本机 JSON 行协议，不直接实现通达信私有协议。
+它记录源时间和本机接收时间，处理 TCP 半包/粘包、坏包、订阅重放和带退避的重连；`MarketHub`
+只保存最新快照及有界历史，页面最多按 `ui_refresh_ms` 合并刷新一次。该实现是开发和演示能力，
+不宣称微秒级延迟，也不能用作生产下单或风控依据。
+
 ### 管理 CRUD 时序
 
 ```mermaid
@@ -105,7 +127,7 @@ sequenceDiagram
 ### 产品、行情与交易
 
 - 产品、项目、资金账号和资产-资金账号关联支持分页、筛选、CRUD 和状态切换。
-- 行情页提供报价、Tick、1 分钟 K 线、盘口和订阅。
+- 行情页提供报价、Tick、1 分钟 K 线、盘口和订阅；默认生成 Mock 实时快照，也可切换到已有的 PyTdx Bridge。
 - 交易页提供限价委托、数量校验、资金/仓位冻结、撤单、模拟成交，以及账户、持仓、委托、成交查询。
 - 交易数据只存在于 Mock Gateway 进程内，重启后恢复初始快照。
 
@@ -184,6 +206,32 @@ PYTHONPATH=client .venv/bin/python -m vnpy_oxapp.app
 
 登录演示用户：`yangjh`；演示密码：`mock-password`。
 
+### 行情配置
+
+先生成本机配置，默认不用网络即可运行：
+
+```bash
+cp config/oxapp.ini.example config/oxapp.ini
+# 保持 [market] source=mock
+PYTHONPATH=client .venv/bin/python -m vnpy_oxapp.app
+```
+
+要使用另一个 WSL 项目中的 PyTdx Bridge，先按其脚本启动 Bridge，再将本机配置改为：
+
+```ini
+[market]
+source=pytdx
+pytdx_host=127.0.0.1
+pytdx_port=19001
+reconnect_seconds=2
+fallback_after_seconds=5
+```
+
+可参考 `/root/projects/quantfabric-study/QuantFabric/runtime/pytdx-bridge.sh` 和
+`/root/projects/quantfabric-study/QuantFabric/runtime/config/PyTdxBridge.json`。Bridge 没有监听、网络断开或没有
+收到有效行情时，客户端会显示重连状态，并在 `fallback_after_seconds` 后显示 Mock 行情；后续收到首条有效
+PyTdx 行情后自动切回 PyTdx。当前 Bridge 仅覆盖沪深六位证券，期货、期权及生产行情商 SDK 不在本工单范围。
+
 ## 测试
 
 在 **WSL Ubuntu 24.04** 中按顺序执行：
@@ -196,7 +244,8 @@ PYTHONPATH=client .venv/bin/python -m unittest discover -s tests/python -v
 PYTHONPATH=client .venv/bin/python -m compileall -q client/vnpy_oxapp
 ```
 
-当前验收结果：C++ 测试 `9/9` 通过，Python 测试 `39/39` 通过。
+验收以以上命令的实际结果为准；测试覆盖 C++ 基础设施、Mock 端到端、行情字段标准化、TCP 拆包、重连、
+Mock 回退、乱序去重、K 线聚合和 Qt 主线程交付。
 
 ## 运行流程
 
@@ -217,10 +266,12 @@ flowchart LR
     G --> L[#11-#13 正式业务 LBM]
     L --> H[#18-#21 Mock 服务替换为正式 HP-Socket]
     H --> E[#23 端到端联调]
-    P[#14 正式 HP-Socket/PackMessage] -. 协议确认后接入 .-> H
+    P[#14 开发版 PyTdx 行情] --> E
+    Q[正式 oxMWH / C++ SDK / PackMessage] -. 协议确认后替换 .-> H
 ```
 
-当前分支只验证客户端和 #1-#8 基础设施，不提前宣称数据库、正式 LBM、正式 HP-Socket、真实权限或真实交易完成。
+当前分支只验证客户端、#1-#8 基础设施和开发版行情接入，不提前宣称数据库、正式 LBM、正式 HP-Socket、
+真实权限、生产低时延行情或真实交易完成。
 
 ## 开发边界
 
@@ -229,7 +280,8 @@ flowchart LR
 及真实持久化。正式 HP-Socket/PackMessage 也未接入，临时 stdin/stdout 协议和 Mock
 消息编号不能作为生产协议使用。
 
-详细链路、协议边界和后续替换点见 [Mock 端到端联调说明](docs/mock-backend-end-to-end.md)。
+详细链路、协议边界和后续替换点见 [Mock 端到端联调说明](docs/mock-backend-end-to-end.md) 和
+[开发版行情路由说明](docs/architecture/market-routing.md)。
 
 Local logs, build output, runtime configuration, credentials, and private keys
 must not be committed.

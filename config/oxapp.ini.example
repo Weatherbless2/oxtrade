@@ -9,3 +9,15 @@ port=18080
 
 [log]
 directory=logs
+
+[market]
+# mock: 离线演示默认值；pytdx: 连接 QuantFabric 的本机 JSON-lines Bridge，超时后自动回退 Mock。
+source=mock
+pytdx_host=127.0.0.1
+pytdx_port=19001
+reconnect_seconds=2
+fallback_after_seconds=5
+ui_refresh_ms=200
+tick_buffer_size=500
+bar_buffer_size=480
+mock_interval_ms=800

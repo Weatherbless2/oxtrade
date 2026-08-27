@@ -1,4 +1,4 @@
-# oxApp Python 客户端（工单 #16/#17）
+# oxApp Python 客户端（工单 #16/#17/#14）
 
 本目录是对 `vn.py` Qt 客户端的业务化扩展，不复制或修改上游 `vn.py` 源码。
 当前实现通信抽象、确定性 Mock 服务、请求关联、公共 Qt 页面容器、客户端日志和控件加载耗时统计；它**没有**连接真实
@@ -39,7 +39,17 @@ vnpy_oxapp/
 页面构造和停止事件。`OxAppMainWindow.load_timings` 保存布局和页面构造耗时，后续 #18-#21
 可以继续对具体业务控件分别计时。
 
-后续真实接入时，只需要新增 `HpSocketTransport` 和正式协议 Codec，并保持页面和服务接口不变。
+后续真实后台接入时，只需要新增 `HpSocketTransport` 和正式协议 Codec，并保持页面和服务接口不变。
+
+## 开发版行情接入（#14）
+
+`market/` 目录新增开发版行情抽象：`PyTdxJsonLineFeed` 消费 QuantFabric 已有的本机 JSON-lines
+Bridge，`MarketHub` 提供标准化快照、去重、乱序保护、有界 Tick 缓冲和分钟 K 线；后台线程通过
+`AsyncQtBridge` 的 Qt 信号进入主线程，行情页按 200ms 默认节流刷新。`source=pytdx` 连接失败时会
+自动回退 `MockMarketFeed`，Bridge 恢复并收到有效行情后自动切回。
+
+这不是生产低时延行情实现：不接正式 oxMWH/HP-Socket/柜台，不实现通达信私有协议，也不应作为真实
+下单或风控依据。配置和详细边界见 [开发版行情路由说明](../docs/architecture/market-routing.md)。
 
 当前 #18-#21 已提供完整的 Mock 管理客户端：系统菜单、数据字典、字典明细、在线日志、用户、
 角色、站点、角色菜单权限、产品、项目、资金账号、风控参数、规则和异常事件。页面支持关键字筛选、

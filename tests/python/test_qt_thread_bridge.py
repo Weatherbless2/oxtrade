@@ -35,6 +35,27 @@ class QtBridgeImportTest(unittest.TestCase):
                 break
         self.assertEqual([get_ident()], receiver_threads)  # 接收回调线程必须是 Qt 主线程。
 
+    def test_market_signal_delivers_background_event_on_qt_main_thread(self) -> None:
+        """#14 行情 Socket 线程与既有请求回包一样，必须经 Qt queued signal 进入页面。"""
+        from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge, PYSIDE_AVAILABLE
+
+        if not PYSIDE_AVAILABLE:
+            self.skipTest("PySide6 is not installed")
+        from PySide6.QtCore import QCoreApplication
+
+        app = QCoreApplication.instance() or QCoreApplication([])
+        bridge = AsyncQtBridge()
+        receiver_threads = []
+        bridge.market_event_received.connect(lambda event: receiver_threads.append(get_ident()))
+        publisher = Thread(target=lambda: bridge.publish_market_event({"symbol": "000001.SZ"}))
+        publisher.start()
+        publisher.join()
+        for _ in range(20):
+            app.processEvents()
+            if receiver_threads:
+                break
+        self.assertEqual([get_ident()], receiver_threads)
+
     def test_main_window_records_layout_and_page_load_timings(self) -> None:
         from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge, PYSIDE_AVAILABLE
 

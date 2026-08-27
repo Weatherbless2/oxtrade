@@ -30,6 +30,7 @@ from .trading_page import TradingPage
 from .login_page import LoginPage
 from ..session import ClientSession
 from .theme import apply_workbench_theme
+from ..market.hub import MarketHub
 
 
 if PYSIDE_AVAILABLE:
@@ -175,13 +176,14 @@ if PYSIDE_AVAILABLE:
     class OxAppMainWindow(QMainWindow):
         """中心工作区 + 左侧导航 + 右侧状态的管理终端布局。"""
 
-        def __init__(self, bridge: AsyncQtBridge, client: ClientProtocolClient | None = None, parent: QWidget | None = None, logger: ClientLogger | None = None) -> None:
+        def __init__(self, bridge: AsyncQtBridge, client: ClientProtocolClient | None = None, parent: QWidget | None = None, logger: ClientLogger | None = None, market_hub: MarketHub | None = None) -> None:
             super().__init__(parent)
             app = QApplication.instance()
             if app is not None:
                 apply_workbench_theme(app)  # 测试构造窗口和正式入口使用同一套 vn.py 风格主题。
             self.logger = logger or ClientLogger()
             self.client = client  # 页面只依赖客户端抽象，Mock/真实 Transport 可替换。
+            self.market_hub = market_hub  # 行情源独立于低频 MockBackendTransport，不能塞进 Query Worker IPC。
             self.session = ClientSession()  # 所有页面共享一个会话对象，登录后服务请求自动携带新 session_id。
             self.load_timings: list[LoadTiming] = []
             self.bridge = bridge
@@ -297,7 +299,7 @@ if PYSIDE_AVAILABLE:
                 self._add_page(UserRightsPage(self.client, self.bridge, self.logger, self.session))
                 self._add_page(FundManagementPage(self.client, self.bridge, self.logger, self.session))
                 self._add_page(RiskManagementPage(self.client, self.bridge, self.logger, self.session))
-                self._add_page(MarketPage(self.client, self.bridge, self.logger, self.session))
+                self._add_page(MarketPage(self.client, self.bridge, self.logger, self.session, self.market_hub))
                 self._add_page(TradingPage(self.client, self.bridge, self.logger, self.session))
                 self._login_page = LoginPage(self.client, self.bridge, self.logger, self.session)
                 self._login_page.session_changed.connect(self._on_session_changed)
