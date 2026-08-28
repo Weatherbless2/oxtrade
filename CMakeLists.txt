@@ -51,6 +51,7 @@ target_compile_features(oxmbs_core PUBLIC cxx_std_17)
 
 add_library(oxmwh_core
     src/oxmwh/market_event.cpp
+    src/oxmwh/market_wire.cpp
     src/oxmwh/oxmwh_service.cpp
     src/oxmwh/mock_market_source.cpp
 )
