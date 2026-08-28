@@ -33,6 +33,7 @@ add_library(oxmbs_core
     src/oxmbs/lbm/lbm_module_loader.cpp
     src/oxmbs/lbm/lbm_task_dispatcher.cpp
     src/oxmbs/mock/mock_backend_protocol.cpp
+    src/oxmbs/market/market_wire_broadcaster.cpp
 )
 
 target_include_directories(oxapp_core
