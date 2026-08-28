@@ -4,6 +4,7 @@ from .config import MarketConfig, load_market_config
 from .event import MarketEvent, MarketPayloadError
 from .feed import FeedState, IMarketFeed, MarketFeedStatus
 from .hub import MarketHub
+from .market_wire_feed import MarketWireFeed
 from .mock_feed import MockMarketFeed
 from .pytdx_feed import PyTdxJsonLineFeed
 from .runtime import create_market_feed
@@ -15,6 +16,7 @@ __all__ = (
     "MarketEvent",
     "MarketFeedStatus",
     "MarketHub",
+    "MarketWireFeed",
     "MarketPayloadError",
     "MockMarketFeed",
     "PyTdxJsonLineFeed",
