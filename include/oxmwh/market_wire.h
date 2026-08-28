@@ -13,7 +13,7 @@ namespace oxmwh::wire {
 // 固定头长度和字段上限属于协议契约；不能直接把 C++ 结构体内存当作网络报文。
 constexpr std::uint32_t kMagic = 0x4F584D57;  // "OXMW"。
 constexpr std::uint16_t kVersion = 1;
-constexpr std::size_t kHeaderSize = 96;
+constexpr std::size_t kHeaderSize = 100;  // 60 字节基础字段 + 32 字节 instrument_id + 8 字节 exchange。
 constexpr std::size_t kMaxFrameSize = 1024 * 1024;
 constexpr std::size_t kMaxBufferedBytes = 4 * kMaxFrameSize;
 constexpr std::size_t kMaxInstrumentLength = 31;
