@@ -56,16 +56,16 @@ class FallbackMarketFeedTest(unittest.TestCase):
         fallback = ControlledFeed("mock")
         feed = FallbackMarketFeed(primary, fallback, fallback_after_seconds=0.05)
         events = []
-        feed.subscribe_symbols(["000001.SZ"])
-        feed.start(events.append, lambda status: None)
+        feed.subscribe_symbols(["000001.SZ"])  # 在启动前登记，验证主源和备用源都能收到同一订阅集合。
+        feed.start(events.append, lambda status: None)  # ControlledFeed 不建真实线程，测试只控制主备事件时序。
         try:
-            self.assertTrue(fallback.started.wait(1.0))
+            self.assertTrue(fallback.started.wait(1.0))  # 故意不给主源任何 Tick，超过静默阈值后 Mock 必须自动启动。
             self.assertEqual(["000001.SZ"], primary.subscriptions)
             self.assertEqual(["000001.SZ"], fallback.subscriptions)
-            fallback.emit(event(second=1, millisec=0, price=10.01, volume=100, turnover=1001))
-            primary.emit(event(second=2, millisec=0, price=10.02, volume=150, turnover=1502))
+            fallback.emit(event(second=1, millisec=0, price=10.01, volume=100, turnover=1001))  # 先证明回退期间页面仍能收到可展示行情。
+            primary.emit(event(second=2, millisec=0, price=10.02, volume=150, turnover=1502))  # 再注入首条恢复行情，触发 Mock -> PyTdx 切回。
             self.assertTrue(self.wait_until(fallback.stopped.is_set))
-            self.assertEqual([10.01, 10.02], [market_event.last_price for market_event in events])
+            self.assertEqual([10.01, 10.02], [market_event.last_price for market_event in events])  # 切源不能吞掉备用末条或主源恢复首条行情。
             self.assertEqual("pytdx", feed.status.source)
         finally:
             feed.stop()
@@ -76,8 +76,8 @@ class FallbackMarketFeedTest(unittest.TestCase):
         feed = FallbackMarketFeed(primary, fallback, fallback_after_seconds=0.05)
         feed.start(lambda market_event: None, lambda status: None)
         try:
-            primary.emit(event(second=1, millisec=0, price=10.01, volume=100, turnover=1001))
-            self.assertTrue(self.wait_until(fallback.started.is_set))
+            primary.emit(event(second=1, millisec=0, price=10.01, volume=100, turnover=1001))  # 先让主源进入 live，再停止发包模拟连接未断但数据卡死。
+            self.assertTrue(self.wait_until(fallback.started.is_set))  # 静默检测必须基于有效 Tick，不可仅看 Socket 仍处于 connected。
             self.assertEqual("mock", feed.status.source)
         finally:
             feed.stop()

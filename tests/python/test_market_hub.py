@@ -50,11 +50,11 @@ class MarketHubTest(unittest.TestCase):
         first = event(second=1, millisec=0, price=10.01, volume=100, turnover=1001)
         newest = event(second=2, millisec=0, price=10.02, volume=150, turnover=1502)
         self.assertTrue(self.hub.publish(first))
-        self.assertFalse(self.hub.publish(first))  # 相同网络重发不重复入 Tick。
+        self.assertFalse(self.hub.publish(first))  # 故意重放同一网络包，验证它不重复入 Tick、K 线或触发 UI。
         self.assertTrue(self.hub.publish(newest))
-        self.assertFalse(self.hub.publish(event(second=1, millisec=500, price=9.99, volume=140, turnover=1400)))
+        self.assertFalse(self.hub.publish(event(second=1, millisec=500, price=9.99, volume=140, turnover=1400)))  # 新快照后再送旧源时间，模拟网络乱序。
         quote = self.hub.quote_page({"page": 1, "page_size": 20})["items"][0]
-        self.assertEqual("10.020", quote["last"])
+        self.assertEqual("10.020", quote["last"])  # 若变成 9.990，说明旧行情错误覆盖了页面最新盘口。
         self.assertEqual({"accepted": 2, "duplicates": 1, "out_of_order": 1}, self.hub.metrics)
 
     def test_cumulative_turnover_is_differenced_into_one_minute_bar(self) -> None:
@@ -63,19 +63,19 @@ class MarketHubTest(unittest.TestCase):
         bar = self.hub.bar_page({"query": "000001.SZ", "page": 1, "page_size": 20})["items"][0]
         self.assertEqual("10.010", bar["open"])
         self.assertEqual("10.030", bar["close"])
-        self.assertEqual(60, bar["volume"])
-        self.assertEqual("602.00", bar["amount"])
+        self.assertEqual(60, bar["volume"])  # 160-100 才是本分钟新增量，不能把两次累计量直接相加。
+        self.assertEqual("602.00", bar["amount"])  # 成交额同样验证 1603-1001 的累计差分。
 
     def test_tick_buffer_has_a_fixed_upper_bound(self) -> None:
         for index in range(12):
             self.hub.publish(event(second=index + 1, millisec=0, price=10 + index / 100, volume=100 + index, turnover=1000 + index))
         ticks = self.hub.tick_page({"query": "000001.SZ", "page": 1, "page_size": 20})
-        self.assertEqual(10, ticks["total"])
+        self.assertEqual(10, ticks["total"])  # 连续送入 12 条后只保留容量 10，证明长期运行不会无界占内存。
         self.assertEqual("10.110", ticks["items"][0]["last"])
 
     def test_cumulative_counter_reset_starts_a_new_increment_instead_of_going_negative(self) -> None:
         self.hub.publish(event(second=1, millisec=0, price=10.01, volume=500, turnover=5000))
-        self.hub.publish(event(second=2, millisec=0, price=10.02, volume=30, turnover=301))
+        self.hub.publish(event(second=2, millisec=0, price=10.02, volume=30, turnover=301))  # 故意让累计计数器回退，模拟跨日或行情源重启。
         bar = self.hub.bar_page({"query": "000001.SZ", "page": 1, "page_size": 20})["items"][0]
-        self.assertEqual(30, bar["volume"])
+        self.assertEqual(30, bar["volume"])  # 回退后的新累计值作为新时段增量，不能产生 -470 或静默丢成 0。
         self.assertEqual("301.00", bar["amount"])

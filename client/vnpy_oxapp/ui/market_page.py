@@ -96,7 +96,7 @@ if PYSIDE_AVAILABLE:
             bridge.market_event_received.connect(self._on_market_event)
             bridge.market_state_changed.connect(self._on_market_state)
             if self.market_hub is not None:
-                self._hub_unsubscribers.append(self.market_hub.add_event_listener(bridge.publish_market_event))
+                self._hub_unsubscribers.append(self.market_hub.add_event_listener(bridge.publish_market_event))  # 保存取消函数，页面销毁后 Hub 不再向旧 Qt 对象发信号。
                 self._hub_unsubscribers.append(self.market_hub.add_state_listener(
                     lambda status: bridge.publish_market_state(status.state.value, f"{status.source} | {status.reason}"),
                 ))  # Hub 在后台线程通知 Qt bridge，页面自身绝不注册跨线程 QWidget 回调。
@@ -120,14 +120,14 @@ if PYSIDE_AVAILABLE:
             self._load_current(self._tabs.currentIndex())  # 切换标的立即重新请求当前页，不能只改输入框而显示旧数据。
 
         def _subscribe(self) -> None:
-            symbol = str(self._symbols.currentData() or "")
-            future = self.service.subscribe([symbol])
+            symbol = str(self._symbols.currentData() or "")  # 下拉框保存内部标准代码，不把带中文名称的展示文本发给 Feed。
+            future = self.service.subscribe([symbol])  # 沪深股票进入 Hub Feed，期货继续走既有 MockGateway/未来正式 SDK。
             request_id = getattr(future, "request_id", "")
             if not request_id:
                 self._status.setText("订阅请求未生成关联编号")
                 return
-            self._pending.add(request_id)
-            future.add_done_callback(self._publish_future)
+            self._pending.add(request_id)  # 页面只消费自己发出的订阅响应，其他表格 Future 不会误改行情状态栏。
+            future.add_done_callback(self._publish_future)  # 本机缓存和远端 Mock 都统一走 Future 完成回调。
             self._status.setText(f"正在订阅 {symbol}...")
 
         def _publish_future(self, future: Any) -> None:
@@ -171,9 +171,9 @@ if PYSIDE_AVAILABLE:
 
         def closeEvent(self, event) -> None:
             for unsubscribe in self._hub_unsubscribers:
-                unsubscribe()
-            self._hub_unsubscribers.clear()
-            super().closeEvent(event)
+                unsubscribe()  # 从 Hub 锁保护的监听表移除当前页面，行情 Feed 和其他订阅者继续运行。
+            self._hub_unsubscribers.clear()  # 清空所有权记录，重复关闭不会重复调用已经移除的监听项。
+            super().closeEvent(event)  # 最后交还 Qt 执行 QWidget 正常关闭；全局 Hub 由 app.finally 统一 stop。
 else:
     class MarketPage:  # type: ignore[no-redef]
         def __init__(self, *args, **kwargs) -> None:

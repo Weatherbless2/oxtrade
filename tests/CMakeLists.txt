@@ -86,4 +86,20 @@ if(UNIX)
     )
     add_dependencies(oxmbs_mock_lbm_end_to_end_test oxmbs_mock_lbm)  # 集成测试必须加载本工单构建出的 Mock-only 动态库。
     add_test(NAME oxmbs_mock_lbm_end_to_end_test COMMAND oxmbs_mock_lbm_end_to_end_test)
+
+    # 性能基准不注册为 CTest：它输出分位数和吞吐，不使用容易受机器负载影响的固定耗时断言。
+    add_library(oxmbs_route_latency_lbm SHARED
+        performance/route_latency_lbm.cpp
+    )
+    target_include_directories(oxmbs_route_latency_lbm PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_compile_features(oxmbs_route_latency_lbm PRIVATE cxx_std_17)
+
+    add_executable(oxmbs_route_latency_benchmark
+        performance/benchmark_workfunc_routes.cpp
+    )
+    target_link_libraries(oxmbs_route_latency_benchmark PRIVATE oxmbs_core oxapp_core)
+    target_compile_definitions(oxmbs_route_latency_benchmark PRIVATE
+        OXMBS_ROUTE_LATENCY_LBM_LIBRARY="$<TARGET_FILE:oxmbs_route_latency_lbm>"
+    )
+    add_dependencies(oxmbs_route_latency_benchmark oxmbs_route_latency_lbm)
 endif()

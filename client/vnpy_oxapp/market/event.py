@@ -16,14 +16,14 @@ _EXCHANGE_SUFFIX = {"SSE": "SH", "SZSE": "SZ"}
 
 
 def _number(payload: Mapping[str, Any], key: str, *, default: float | None = None) -> float:
-    raw = payload.get(key, default)
+    raw = payload.get(key, default)  # Bridge 字段先按原始对象读取；缺省值仅用于协议允许缺失的数值字段。
     if raw is None or isinstance(raw, bool):
         raise MarketPayloadError(f"market field {key!r} must be a number")
     try:
-        value = float(raw)
+        value = float(raw)  # 统一接收 JSON 整数/浮点/数字字符串，输出稳定的 Python float 给 Hub。
     except (TypeError, ValueError) as error:
         raise MarketPayloadError(f"market field {key!r} must be a number") from error
-    if not isfinite(value) or value < 0:
+    if not isfinite(value) or value < 0:  # NaN/Inf 会破坏排序和 K 线计算，负成交量/价格也不进入内部行情模型。
         raise MarketPayloadError(f"market field {key!r} must be a finite non-negative number")
     return value
 
@@ -36,11 +36,11 @@ def _integer(payload: Mapping[str, Any], key: str, *, default: int | None = None
 
 
 def _levels(payload: Mapping[str, Any], key: str, *, integer: bool) -> tuple[float, ...] | tuple[int, ...]:
-    raw = payload.get(key, ())
+    raw = payload.get(key, ())  # 五档可缺省为空，但出现时必须是数组，不能把字符串逐字符当档位。
     if not isinstance(raw, (list, tuple)):
         raise MarketPayloadError(f"market field {key!r} must be an array")
     values: list[float] = []
-    for value in raw[:5]:
+    for value in raw[:5]:  # 超过五档的数据在本工单模型边界截断，页面不会意外扩张固定五档布局。
         if isinstance(value, bool):
             raise MarketPayloadError(f"market field {key!r} contains an invalid level")
         try:
@@ -52,15 +52,15 @@ def _levels(payload: Mapping[str, Any], key: str, *, integer: bool) -> tuple[flo
         if integer and int(parsed) != parsed:
             raise MarketPayloadError(f"market field {key!r} contains a non-integer volume")
         values.append(parsed)
-    values.extend([0.0] * (5 - len(values)))
+    values.extend([0.0] * (5 - len(values)))  # Bridge 少于五档时补零，保证下游可安全使用固定下标 0..4。
     return tuple(int(value) for value in values) if integer else tuple(values)
 
 
 def split_symbol(symbol: str) -> tuple[str, str]:
     """把 ``600519.SH`` 拆成 PyTdx Bridge 使用的 ticker 和 exchange。"""
 
-    ticker, separator, suffix = symbol.strip().upper().partition(".")
-    exchange = {"SH": "SSE", "SZ": "SZSE"}.get(suffix)
+    ticker, separator, suffix = symbol.strip().upper().partition(".")  # 页面统一代码形如 600519.SH，订阅协议需要拆成 ticker/exchange。
+    exchange = {"SH": "SSE", "SZ": "SZSE"}.get(suffix)  # 只映射当前 Bridge 明确支持的沪深市场，期货不会被猜成股票。
     if not separator or len(ticker) != 6 or not ticker.isdigit() or exchange is None:
         raise ValueError(f"unsupported A-share symbol: {symbol!r}")
     return ticker, exchange
@@ -125,7 +125,7 @@ class MarketEvent:
         exchange = str(payload.get("exchange", "")).strip().upper()
         if len(ticker) != 6 or not ticker.isdigit() or exchange not in _EXCHANGE_SUFFIX:
             raise MarketPayloadError("market payload has unsupported ticker or exchange")
-        actual_received_at = received_at or datetime.now()
+        actual_received_at = received_at or datetime.now()  # 本机接收时钟只用于延迟排查和补日期，不冒充交易所时间。
         update_time = str(payload.get("update_time", "")).strip()
         millisec = _integer(payload, "millisec", default=0)
         if not update_time or not 0 <= millisec <= 999:
@@ -134,10 +134,10 @@ class MarketEvent:
             if "T" in update_time or len(update_time) >= 19:
                 parsed_time = datetime.fromisoformat(update_time)  # 兼容后续行情商提供完整 ISO 日期时间的情况。
             else:
-                parsed_time = datetime.combine(actual_received_at.date(), datetime.strptime(update_time, "%H:%M:%S").time())
+                parsed_time = datetime.combine(actual_received_at.date(), datetime.strptime(update_time, "%H:%M:%S").time())  # 旧 Bridge 只有时分秒，因此用接收日补齐排序所需日期。
         except ValueError as error:
             raise MarketPayloadError("market payload has invalid update_time") from error
-        source_time = parsed_time.replace(microsecond=millisec * 1_000)
+        source_time = parsed_time.replace(microsecond=millisec * 1_000)  # 协议毫秒转成 datetime 微秒单位，Hub 据此执行同日乱序判断和分钟归桶。
         return cls(
             symbol=f"{ticker}.{_EXCHANGE_SUFFIX[exchange]}",
             ticker=ticker,

@@ -47,14 +47,14 @@ class QtBridgeImportTest(unittest.TestCase):
         bridge = AsyncQtBridge()
         receiver_threads = []
         bridge.market_event_received.connect(lambda event: receiver_threads.append(get_ident()))
-        publisher = Thread(target=lambda: bridge.publish_market_event({"symbol": "000001.SZ"}))
-        publisher.start()
-        publisher.join()
+        publisher = Thread(target=lambda: bridge.publish_market_event({"symbol": "000001.SZ"}))  # 用普通后台线程模拟 PyTdx Socket 回调所在执行流。
+        publisher.start()  # 后台线程只 emit Qt signal；若直接操作 QWidget，真实运行会出现跨线程崩溃或竞态。
+        publisher.join()  # 先确认生产者结束，再由主线程主动处理 queued signal。
         for _ in range(20):
-            app.processEvents()
+            app.processEvents()  # 测试没有 app.exec()，手工泵事件循环才能交付排队到主线程的行情信号。
             if receiver_threads:
                 break
-        self.assertEqual([get_ident()], receiver_threads)
+        self.assertEqual([get_ident()], receiver_threads)  # 接收线程必须等于测试/Qt 主线程，失败即定位跨线程边界错误。
 
     def test_main_window_records_layout_and_page_load_timings(self) -> None:
         from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge, PYSIDE_AVAILABLE

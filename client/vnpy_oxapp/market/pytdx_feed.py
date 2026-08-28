@@ -44,11 +44,11 @@ class PyTdxJsonLineFeed(IMarketFeed):
     def start(self, event_callback: EventCallback, state_callback: StateCallback) -> None:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
-                return
-            self._event_callback, self._state_callback = event_callback, state_callback
-            self._stop_event.clear()
-            self._thread = Thread(target=self._run, name="oxapp-pytdx-market", daemon=True)
-            self._thread.start()
+                return  # start() 幂等，已有接收线程时不能再创建第二条线程争抢同一订阅和 Socket。
+            self._event_callback, self._state_callback = event_callback, state_callback  # 回调属于本次运行，行情线程只向上游 Hub 交付标准事件。
+            self._stop_event.clear()  # 清除上一次 stop 标记，允许同一个 Feed 在 Mock 回切后重新启动。
+            self._thread = Thread(target=self._run, name="oxapp-pytdx-market", daemon=True)  # 独立线程承受阻塞网络 I/O，绝不占用 Qt 主线程。
+            self._thread.start()  # 线程拥有连接和重连循环，调用方立即返回继续构建页面。
 
     def subscribe_symbols(self, symbols: list[str]) -> None:
         commands: list[dict[str, str]] = []
@@ -60,26 +60,26 @@ class PyTdxJsonLineFeed(IMarketFeed):
                 except ValueError:
                     continue  # PyTdx Bridge 当前只接受沪深六位证券，IF 等期货由正式行情 SDK 处理。
                 if normalized not in self._subscriptions:
-                    self._subscriptions.add(normalized)
-                    commands.append({"type": "subscribe", "ticker": ticker, "exchange": exchange})
-            active_socket = self._socket
+                    self._subscriptions.add(normalized)  # set 保证重复点击订阅不会重复登记；断线后以它为准完整重放。
+                    commands.append({"type": "subscribe", "ticker": ticker, "exchange": exchange})  # 页面代码转换成 Bridge 明确的 JSON 命令字段。
+            active_socket = self._socket  # 在状态锁内取得当时连接快照，实际写入再由专用写锁串行。
         if active_socket is not None:
             for command in commands:
                 self._send_command(active_socket, command)  # 已连接时即时增量订阅，断线后的完整重放由 _send_subscriptions 负责。
 
     def stop(self) -> None:
-        self._stop_event.set()
+        self._stop_event.set()  # 同时通知连接、recv 超时和退避 wait 三个阻塞边界尽快退出。
         with self._lock:
             active_socket, self._socket = self._socket, None
             thread = self._thread
         if active_socket is not None:
             try:
-                active_socket.shutdown(socket.SHUT_RDWR)
+                active_socket.shutdown(socket.SHUT_RDWR)  # 主动打断另一线程正在执行的 recv/send，不能只等 300ms socket timeout。
             except OSError:
                 pass
             active_socket.close()  # 关闭 socket 使 recv 立即退出，不能只等待 timeout 才释放行情线程。
         if thread is not None and thread is not current_thread():
-            thread.join(timeout=max(1.0, self.config.connect_timeout_seconds + 1.0))
+            thread.join(timeout=max(1.0, self.config.connect_timeout_seconds + 1.0))  # 等待 Feed 自己清理连接；禁止当前线程 join 自己造成死锁。
         with self._lock:
             self._thread = None
         self._set_status(FeedState.STOPPED, "PyTdx bridge stopped")
@@ -89,12 +89,12 @@ class PyTdxJsonLineFeed(IMarketFeed):
         while not self._stop_event.is_set():
             self._set_status(FeedState.CONNECTING if reconnects == 0 else FeedState.RECONNECTING, "connecting to PyTdx bridge")
             try:
-                active_socket = socket.create_connection((self.config.host, self.config.port), self.config.connect_timeout_seconds)
+                active_socket = socket.create_connection((self.config.host, self.config.port), self.config.connect_timeout_seconds)  # 标准 TCP connect 带有限超时，Bridge 不存在时可进入重连/回退而非永久挂住。
                 active_socket.settimeout(0.3)  # 让 stop/reconnect 可定期检查，避免永久阻塞在 recv。
                 with self._lock:
                     self._socket = active_socket
                     self._pending = b""  # 新连接从明确的帧边界开始，防止旧连接残包污染后续 JSON 行。
-                self._send_subscriptions(active_socket)
+                self._send_subscriptions(active_socket)  # 每次新连接都重放完整订阅集，因为旧连接上的订阅状态不会自动迁移。
                 self._set_status(FeedState.CONNECTED, f"connected to {self.config.host}:{self.config.port}")
                 self._receive_lines(active_socket)
             except OSError as error:
@@ -102,7 +102,7 @@ class PyTdxJsonLineFeed(IMarketFeed):
                     self._set_status(FeedState.RECONNECTING, f"PyTdx bridge unavailable: {error}")
             finally:
                 with self._lock:
-                    closing_socket, self._socket = self._socket, None
+                    closing_socket, self._socket = self._socket, None  # 先取消共享句柄发布，再关闭局部对象，新增订阅不会误写已失效连接。
                 if closing_socket is not None:
                     try:
                         closing_socket.close()
@@ -116,42 +116,42 @@ class PyTdxJsonLineFeed(IMarketFeed):
     def _receive_lines(self, active_socket: socket.socket) -> None:
         while not self._stop_event.is_set():
             try:
-                block = active_socket.recv(16_384)
+                block = active_socket.recv(16_384)  # TCP 只保证字节顺序，不保证一条 recv 对应一行 JSON，后续必须自行拆帧。
             except socket.timeout:
                 continue
             if not block:
                 raise OSError("PyTdx bridge closed the connection")
-            self.consume_bytes(block)
+            self.consume_bytes(block)  # 将任意大小的网络块交给换行帧解析器，半包会留到下一次 recv。
 
     def consume_bytes(self, block: bytes) -> None:
         """消费 TCP 字节块；显式保留半包直到换行，供 Socket 循环和协议单测共同使用。"""
 
-        pending = getattr(self, "_pending", b"") + block
+        pending = getattr(self, "_pending", b"") + block  # 旧半包和新字节先拼接，只有看到换行才形成一条完整协议消息。
         if len(pending) > self.config.max_line_bytes and b"\n" not in pending:
             self._increment_bad_payloads()
             self._pending = b""  # 单行无限增长意味着协议失步，清空以保护客户端内存而不是积压到 OOM。
             return
         while b"\n" in pending:
-            raw_line, pending = pending.split(b"\n", 1)
+            raw_line, pending = pending.split(b"\n", 1)  # 一次只剥离首行，循环同时处理同一 TCP 块中的多条粘包消息。
             if len(raw_line) > self.config.max_line_bytes:
                 self._increment_bad_payloads()
                 continue
             self._handle_line(raw_line)
-        self._pending = pending
+        self._pending = pending  # 最后一段无换行字节继续归当前连接所有，等待后续 recv 补齐。
 
     def _handle_line(self, raw_line: bytes) -> None:
         try:
-            payload = json.loads(raw_line.decode("utf-8"))
+            payload = json.loads(raw_line.decode("utf-8"))  # 先完成 UTF-8 和 JSON 结构校验，外部字节不能直接进入 Hub。
             if not isinstance(payload, dict):
                 raise MarketPayloadError("market JSON line must contain an object")
-            event = MarketEvent.from_bridge_payload(payload)
+            event = MarketEvent.from_bridge_payload(payload)  # 再执行类型、证券代码、数值范围、五档和时间标准化。
         except (UnicodeDecodeError, json.JSONDecodeError, MarketPayloadError):
             self._increment_bad_payloads()
             return  # 坏包只计数和丢弃，绝不能让单个对端报文终止整个行情接收线程。
         callback = self._event_callback
         if callback is not None:
-            callback(event)
-        self._increment_delivered()
+            callback(event)  # 回调运行在此 Socket 线程；约定只交给 Hub，禁止直接修改 QWidget。
+        self._increment_delivered()  # 只有成功解析且完成交付的消息计入 delivered，坏包使用独立计数。
 
     def _send_subscriptions(self, active_socket: socket.socket) -> None:
         with self._lock:

@@ -14,14 +14,14 @@ from .feed import IMarketFeed, MarketFeedStatus
 
 @dataclass(slots=True)
 class _MinuteBar:
-    minute: datetime
-    symbol: str
-    open_price: float
-    high_price: float
-    low_price: float
-    close_price: float
-    volume: int
-    amount: float
+    minute: datetime  # 去掉秒和微秒后的源时间桶，决定 Tick 应写入哪根一分钟 K 线。
+    symbol: str  # 每个证券独立聚合，不能把多个标的的累计成交量相减。
+    open_price: float  # 本分钟首个被 Hub 接受的 Tick 价格，后续 Tick 不覆盖。
+    high_price: float  # 本分钟已接受 Tick 的最高价，乱序 Tick 在进入这里前已被丢弃。
+    low_price: float  # 本分钟已接受 Tick 的最低价。
+    close_price: float  # 本分钟最新被接受的 Tick 价格，每次正常更新。
+    volume: int  # 由行情累计成交量做差得到的分钟增量，不直接累加累计值。
+    amount: float  # 由累计成交额做差得到的分钟增量，计数器回退按新时段重新起算。
 
 
 HubEventCallback = Callable[[MarketEvent], None]
@@ -75,7 +75,7 @@ class MarketHub:
         self.feed.start(self.publish, self._on_feed_state)  # Feed 线程仅调用 Hub，不知道 Qt，便于替换成 C++ SDK/行情商实现。
 
     def stop(self) -> None:
-        self.feed.stop()
+        self.feed.stop()  # Hub 不拥有 Socket 细节，只要求 Feed 同步结束其线程、连接和回退监控资源。
 
     def subscribe_symbols(self, symbols: list[str]) -> None:
         self.feed.subscribe_symbols(symbols)  # 订阅语义由 Feed 处理，Hub 只管理接收后的标准化快照。
@@ -84,11 +84,11 @@ class MarketHub:
         with self._lock:
             self._callback_id += 1
             callback_id = self._callback_id
-            self._event_callbacks[callback_id] = callback
+            self._event_callbacks[callback_id] = callback  # 用独立编号保存监听者，页面关闭时可精确移除而不影响其他消费者。
 
         def unsubscribe() -> None:
             with self._lock:
-                self._event_callbacks.pop(callback_id, None)
+                self._event_callbacks.pop(callback_id, None)  # 重复取消视为成功，Qt 多次关闭不会抛异常或留下跨线程回调。
 
         return unsubscribe
 
@@ -110,7 +110,7 @@ class MarketHub:
         """接收一个标准事件；重复/乱序事件不覆盖最新快照也不触发 UI 刷新。"""
 
         with self._lock:
-            previous = self._latest.get(event.symbol)
+            previous = self._latest.get(event.symbol)  # 去重和乱序只与同一标的最新快照比较，不同证券互不阻塞。
             if previous is not None:
                 if event.source_time.date() == previous.source_time.date() and event.source_timestamp_ms < previous.source_timestamp_ms:
                     self._out_of_order += 1
@@ -118,20 +118,20 @@ class MarketHub:
                 if event.fingerprint == previous.fingerprint:
                     self._duplicates += 1
                     return False  # 完全重复的网络重发不能占满 Tick 缓冲或导致 UI 高频无效重绘。
-            self._sequence += 1
-            accepted = event.with_sequence(self._sequence)
-            self._latest[accepted.symbol] = accepted
+            self._sequence += 1  # 只给真正接受的行情分配本机单调序号，丢弃包不制造序号空洞。
+            accepted = event.with_sequence(self._sequence)  # 外部 source 无权提供 sequence，避免伪造本机接收先后关系。
+            self._latest[accepted.symbol] = accepted  # 最新快照替换是锁内原子动作，Service 不会读到更新一半的对象。
             self._ticks.setdefault(accepted.symbol, deque(maxlen=self.tick_capacity)).append(accepted)  # deque 的 maxlen 提供硬上限，长时间运行不会无界占用内存。
-            self._update_bar(accepted)
-            self._accepted += 1
-            callbacks = tuple(self._event_callbacks.values())
+            self._update_bar(accepted)  # 同一把 Hub 锁内同步更新 Tick/K 线/累计值，使几种页面快照彼此一致。
+            self._accepted += 1  # accepted 统计的是通过标准化、去重和乱序闸门后真正入库的事件。
+            callbacks = tuple(self._event_callbacks.values())  # 复制监听者快照后释放锁，回调可安全取消订阅或读取 Hub。
         for callback in callbacks:
             callback(accepted)  # 锁外发布，慢 UI/日志订阅者不能阻塞下一条行情入缓存。
         return True
 
     def quote_page(self, filters: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            rows = [self._quote_row(event) for event in self._latest.values()]
+            rows = [self._quote_row(event) for event in self._latest.values()]  # 锁内把不可变 Event 转成页面行，锁外分页不再接触共享字典。
         return self._page(rows, filters, sort_key="symbol")
 
     def tick_page(self, filters: dict[str, Any]) -> dict[str, Any]:
@@ -163,22 +163,22 @@ class MarketHub:
             callback(status)  # 状态监听者和行情监听者都在锁外执行，状态变化不能卡住行情接收。
 
     def _update_bar(self, event: MarketEvent) -> None:
-        minute = event.source_time.replace(second=0, microsecond=0)
-        last_volume, last_turnover = self._cumulative.get(event.symbol, (event.volume, event.turnover))
-        volume_delta = event.volume - last_volume if event.volume >= last_volume else event.volume
-        turnover_delta = event.turnover - last_turnover if event.turnover >= last_turnover else event.turnover
+        minute = event.source_time.replace(second=0, microsecond=0)  # 以行情源时间归入分钟桶，本机接收延迟不会把 Tick 推到错误分钟。
+        last_volume, last_turnover = self._cumulative.get(event.symbol, (event.volume, event.turnover))  # 首条没有基准，默认自己减自己得到零增量。
+        volume_delta = event.volume - last_volume if event.volume >= last_volume else event.volume  # 正常累计做差；回退视为交易日/源重启后的新累计起点。
+        turnover_delta = event.turnover - last_turnover if event.turnover >= last_turnover else event.turnover  # 成交额同样禁止产生负的 K 线增量。
         # 累计值回退通常是跨交易日/源重启，按新累计值作为首段增量，不能用 0 抹掉新时段真实成交。
         self._cumulative[event.symbol] = (event.volume, event.turnover)
-        bars = self._bars.setdefault(event.symbol, deque(maxlen=self.bar_capacity))
+        bars = self._bars.setdefault(event.symbol, deque(maxlen=self.bar_capacity))  # 每标的一条有界分钟线队列，满时自动删除最老 K 线。
         if not bars or bars[-1].minute != minute:
-            bars.append(_MinuteBar(minute, event.symbol, event.last_price, event.last_price, event.last_price, event.last_price, volume_delta, turnover_delta))
+            bars.append(_MinuteBar(minute, event.symbol, event.last_price, event.last_price, event.last_price, event.last_price, volume_delta, turnover_delta))  # 新分钟首 Tick 同时确定开高低收初值。
             return
         current = bars[-1]
-        current.high_price = max(current.high_price, event.last_price)
-        current.low_price = min(current.low_price, event.last_price)
-        current.close_price = event.last_price
-        current.volume += volume_delta
-        current.amount += turnover_delta
+        current.high_price = max(current.high_price, event.last_price)  # 同一分钟后续 Tick 只扩展最高价，不改变开盘价。
+        current.low_price = min(current.low_price, event.last_price)  # 最低价按已接受事件收缩；乱序事件不会到达此处。
+        current.close_price = event.last_price  # 最新源时间对应价格成为当前分钟收盘快照。
+        current.volume += volume_delta  # 累加的是相邻累计值之差，不会把累计成交量重复计算多次。
+        current.amount += turnover_delta  # 成交额使用同样的增量语义，供页面展示本分钟实际变化。
 
     @staticmethod
     def _quote_row(event: MarketEvent) -> dict[str, Any]:
@@ -224,5 +224,5 @@ class MarketHub:
         total = len(rows)
         page_size = max(1, int(filters.get("page_size", 20) or 20))
         page = max(1, int(filters.get("page", 1) or 1))
-        start = (page - 1) * page_size
-        return {"items": rows[start:start + page_size], "page": page, "page_size": page_size, "total": total}
+        start = (page - 1) * page_size  # 页码从 1 开始，转为 Python 切片的零起点偏移。
+        return {"items": rows[start:start + page_size], "page": page, "page_size": page_size, "total": total}  # 保持既有 ServiceTablePage 的分页响应形状。
