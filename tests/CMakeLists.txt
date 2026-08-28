@@ -85,7 +85,15 @@ if(UNIX)
         OXMBS_MOCK_LBM_LIBRARY="$<TARGET_FILE:oxmbs_mock_lbm>"
     )
     add_dependencies(oxmbs_mock_lbm_end_to_end_test oxmbs_mock_lbm)  # 集成测试必须加载本工单构建出的 Mock-only 动态库。
-    add_test(NAME oxmbs_mock_lbm_end_to_end_test COMMAND oxmbs_mock_lbm_end_to_end_test)
+add_test(NAME oxmbs_mock_lbm_end_to_end_test COMMAND oxmbs_mock_lbm_end_to_end_test)
+
+add_executable(oxmwh_service_test
+    test_oxmwh.cpp
+)
+
+target_link_libraries(oxmwh_service_test PRIVATE oxmwh_core)
+
+add_test(NAME oxmwh_service_test COMMAND oxmwh_service_test)
 
     # 性能基准不注册为 CTest：它输出分位数和吞吐，不使用容易受机器负载影响的固定耗时断言。
     add_library(oxmbs_route_latency_lbm SHARED

@@ -14,7 +14,7 @@ execution. oxApp must not call its database or business modules directly.
 
 ## Other planned services
 
-- `oxMWH`: market-data ingestion and normalized quote delivery.
+- `oxMWH`: this repository's market-data ingestion core and normalized quote delivery; formal broker/HP-Socket adapters are added behind its interfaces.
 - `lbm_sys`, `lbm_right`, `lbm_fund`: loadable business modules called by
   oxMBS workers.
 - Trading gateway and query services: isolated backend processes. oxApp does

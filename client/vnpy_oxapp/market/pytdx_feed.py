@@ -1,4 +1,4 @@
-"""连接 QuantFabric PyTdx Bridge 的 TCP JSON-lines 客户端。"""
+"""可选 PyTdx 兼容 JSON-lines 行情源客户端；不依赖或启动其他项目。"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ class PyTdxFeedConfig:
 
 
 class PyTdxJsonLineFeed(IMarketFeed):
-    """只消费本机 PyTdx Bridge 的 JSON 行，不直接实现通达信私有二进制协议。"""
+    """只消费外部提供的兼容 JSON 行，不直接实现通达信私有二进制协议。"""
 
     def __init__(self, config: PyTdxFeedConfig | None = None) -> None:
         self.config = config or PyTdxFeedConfig()

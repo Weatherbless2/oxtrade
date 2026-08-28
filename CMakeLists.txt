@@ -49,15 +49,30 @@ target_include_directories(oxmbs_core
 
 target_compile_features(oxmbs_core PUBLIC cxx_std_17)
 
+add_library(oxmwh_core
+    src/oxmwh/market_event.cpp
+    src/oxmwh/oxmwh_service.cpp
+    src/oxmwh/mock_market_source.cpp
+)
+
+target_include_directories(oxmwh_core
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_compile_features(oxmwh_core PUBLIC cxx_std_17)
+
 # LBM 在 Linux/WSL 通过 dlopen/dlsym 延迟加载；CMake 负责在需要的平台传递 libdl。
 target_link_libraries(oxmbs_core PUBLIC ${CMAKE_DL_LIBS})
 
 if(MSVC)
     target_compile_options(oxapp_core PRIVATE /W4 /permissive-)
     target_compile_options(oxmbs_core PRIVATE /W4 /permissive-)
+    target_compile_options(oxmwh_core PRIVATE /W4 /permissive-)
 else()
     target_compile_options(oxapp_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(oxmbs_core PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(oxmwh_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(oxApp

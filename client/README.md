@@ -43,13 +43,14 @@ vnpy_oxapp/
 
 ## 开发版行情接入（#14）
 
-`market/` 目录新增开发版行情抽象：`PyTdxJsonLineFeed` 消费 QuantFabric 已有的本机 JSON-lines
-Bridge，`MarketHub` 提供标准化快照、去重、乱序保护、有界 Tick 缓冲和分钟 K 线；后台线程通过
-`AsyncQtBridge` 的 Qt 信号进入主线程，行情页按 200ms 默认节流刷新。`source=pytdx` 连接失败时会
-自动回退 `MockMarketFeed`，Bridge 恢复并收到有效行情后自动切回。
+`market/` 目录提供客户端行情抽象：`MarketHub` 提供标准化快照、去重、乱序保护、有界 Tick 缓冲和分钟 K 线；
+后台线程通过 `AsyncQtBridge` 的 Qt 信号进入主线程，行情页按 200ms 默认节流刷新。`source=mock` 默认使用
+`oxApp` 仓库内的 Mock 行情源；可选 `PyTdxJsonLineFeed` 只作为兼容开发适配，连接失败时自动回退
+`MockMarketFeed`，不要求也不会自动启动其他项目。
 
-这不是生产低时延行情实现：不接正式 oxMWH/HP-Socket/柜台，不实现通达信私有协议，也不应作为真实
-下单或风控依据。配置和详细边界见 [开发版行情路由说明](../docs/architecture/market-routing.md)。
+这不是生产低时延行情实现：客户端默认不接正式券商/HP-Socket/柜台。正式行情源通过同仓库 `oxMWH`
+的 `IMarketSource` 接入，正式发布协议通过 `IMarketPublisher` 接入，不应把开发 Mock 作为真实下单或风控依据。
+配置和详细边界见 [行情路由说明](../docs/architecture/market-routing.md)。
 
 当前 #18-#21 已提供完整的 Mock 管理客户端：系统菜单、数据字典、字典明细、在线日志、用户、
 角色、站点、角色菜单权限、产品、项目、资金账号、风控参数、规则和异常事件。页面支持关键字筛选、
