@@ -106,6 +106,18 @@ bool valid_event_payload(const MarketWireMessage& message, std::string& error) {
 
 }  // namespace
 
+bool MarketWirePublisher::publish(const MarketEvent& event, std::string& error) {
+    MarketWireMessage message;
+    if (!encode_market_event(event, message, error)) {
+        return false;
+    }
+    std::vector<std::uint8_t> frame;
+    if (!encode(message, frame, error)) {
+        return false;
+    }
+    return sink_.send(frame, error);  // 网络适配器只接收完整帧；重试和连接状态由它自己的生命周期管理。
+}
+
 bool encode(const MarketWireMessage& message,
             std::vector<std::uint8_t>& output,
             std::string& error) {

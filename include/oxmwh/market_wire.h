@@ -1,6 +1,7 @@
 #pragma once
 
 #include "oxmwh/market_event.h"
+#include "oxmwh/market_publisher.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -52,6 +53,25 @@ struct DecodeResult {
     std::string error;
 
     explicit operator bool() const noexcept { return status == DecodeStatus::Ok; }
+};
+
+class IMarketWireSink {
+public:
+    virtual ~IMarketWireSink() = default;
+
+    virtual bool send(const std::vector<std::uint8_t>& frame,
+                      std::string& error) = 0;
+};
+
+// 将标准事件编码后交给 HP-Socket/oxMBS 适配器；本类不拥有连接，也不执行阻塞重试。
+class MarketWirePublisher final : public IMarketPublisher {
+public:
+    explicit MarketWirePublisher(IMarketWireSink& sink) : sink_(sink) {}
+
+    bool publish(const MarketEvent& event, std::string& error) override;
+
+private:
+    IMarketWireSink& sink_;
 };
 
 // MarketWire 使用显式 little-endian 字段，保证 x86/Linux 与未来 Windows 适配不依赖 ABI。
