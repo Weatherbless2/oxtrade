@@ -48,6 +48,10 @@ vnpy_oxapp/
 `oxApp` 仓库内的 Mock 行情源；可选 `PyTdxJsonLineFeed` 只作为兼容开发适配，连接失败时自动回退
 `MockMarketFeed`，不要求也不会自动启动其他项目。
 
+当前 #14 还提供 `MarketWireFeed`，用于验证 oxMBS 推送帧到客户端标准事件的边界：它实现固定头、显式
+little-endian 字段、半包/粘包、订阅过滤和源序号保护。它通过 `feed_bytes()` 接收外部传输层交付的字节，
+不会自行创建 HP-Socket，也不会启动另一个行情项目。
+
 这不是生产低时延行情实现：客户端默认不接正式券商/HP-Socket/柜台。正式行情源通过同仓库 `oxMWH`
 的 `IMarketSource` 接入，正式发布协议通过 `IMarketPublisher` 接入，不应把开发 Mock 作为真实下单或风控依据。
 配置和详细边界见 [行情路由说明](../docs/architecture/market-routing.md)。

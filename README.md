@@ -68,21 +68,26 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    MS[oxMWH\nIMarketSource + OxMwhService] --> PUB[IMarketPublisher\n当前 Mock 发布适配]
-    PUB -. 后续正式适配 .-> HUB[MarketHub\n标准化、去重、乱序保护\n有界 Tick 缓冲、分钟 K 线]
+    MS[oxMWH\nIMarketSource + OxMwhService] --> AQ[AsyncMarketPublisher\n有界队列/背压策略]
+    AQ --> WP[MarketWirePublisher\n显式小端协议]
+    WP --> MB[oxMBS MarketWireBroadcaster\n订阅过滤/序号断档检测]
+    MB --> WF[MarketWireFeed\n半包/粘包解码]
+    WF --> HUB[MarketHub\n标准化、去重、乱序保护\n有界 Tick 缓冲、分钟 K 线]
     MF[同仓库 MockMarketSource] --> MS
     PT[可选 PyTdxJsonLineFeed\n仅开发适配] -. 注入行情源 .-> MS
     HUB --> SVC[MarketService]
     HUB --> QT[AsyncQtBridge\nQt queued signal]
     SVC --> UI[行情页快照查询]
     QT --> UI
-    IPC[低频 System V IPC / Query Worker] -. 禁止进入 .-> HUB
+    IPC[低频 System V IPC / Query Worker] -. 禁止进入 .-> MS
 ```
 
 `OxMwhService` 只负责行情源回调的字段校验、代码标准化、订阅过滤、源序号去重/乱序保护和发布，
-不执行数据库、慢查询或交易逻辑。外部券商 SDK、正式 HP-Socket 和正式 PackMessage 通过接口适配，
+不执行数据库、慢查询或交易逻辑。当前已实现 `MarketWire` 临时协议、异步发布队列和同仓库 `oxMBS`
+广播核心；外部券商 SDK、正式 HP-Socket 和正式 PackMessage 仍通过接口适配，
 待 Mentor 确认后接入。`MarketHub` 负责客户端快照、Tick/K 线缓存和 Qt 刷新；当前实现用于开发和演示，
-不宣称生产级低时延，也不能用作真实下单或风控依据。
+不宣称生产级低时延，也不能用作真实下单或风控依据。`MarketWireFeed` 当前由外部传输层注入字节，
+不会自行连接或启动另一个项目。
 
 ### 管理 CRUD 时序
 
