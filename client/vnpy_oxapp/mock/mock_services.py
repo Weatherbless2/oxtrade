@@ -60,6 +60,8 @@ class MockServiceRouter:
             return {"status": "ok", "server_time": "2026-08-24T09:00:00+08:00", "source": "mock"}
         if operation == "login":
             return self._login(payload)
+        if operation == "logout":
+            return self._logout(payload)
         if operation == "create":
             return self._create(service, payload)
         if operation == "update":
@@ -104,6 +106,13 @@ class MockServiceRouter:
             raise MockServiceError("unauthorized", "mock user is not allowed to log in")
         self._append_audit(user_name, "INFO", "Mock 登录成功")
         return {"session_id": f"mock-session-{user['user_id']}", "user": user, "source": "mock"}
+
+    def _logout(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        user_name = str(payload.get("user_name", "")).strip()
+        if not user_name:
+            raise MockServiceError("validation_error", "user_name is required")
+        self._append_audit(user_name, "INFO", "Mock 注销成功")
+        return {"status": "logged_out", "user_name": user_name, "source": "mock"}
 
     def _create(self, service: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         resource = self._resource_name(service)

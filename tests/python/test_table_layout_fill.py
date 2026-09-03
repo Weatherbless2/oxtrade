@@ -30,6 +30,7 @@ class TableLayoutFillTest(unittest.TestCase):
         self.assertTrue(client.connect())
         window = OxAppMainWindow(bridge, client=client, logger=ClientLogger(stdout=StringIO()))
         window.resize(1440, 900)
+        window._session_stack.setCurrentIndex(1)  # 页面布局测试显式进入工作台，生产默认仍从登录页开始。
         window.show()
         window._navigation.setCurrentRow(2)
         self._process_events(app)
@@ -61,6 +62,7 @@ class TableLayoutFillTest(unittest.TestCase):
         self.assertTrue(client.connect())
         window = OxAppMainWindow(bridge, client=client, logger=ClientLogger(stdout=StringIO()))
         window.resize(1440, 900)
+        window._session_stack.setCurrentIndex(1)  # 页面布局测试显式进入工作台，生产默认仍从登录页开始。
         window.show()
         window._navigation.setCurrentRow(2)
         self._process_events(app)

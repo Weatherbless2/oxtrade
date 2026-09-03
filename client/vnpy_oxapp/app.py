@@ -1,4 +1,10 @@
-"""Mock-first oxApp 客户端启动入口。"""
+"""Mock-first oxApp 客户端启动入口。
+
+启动顺序固定为：创建日志和 QApplication → 应用主题 → 建立 Qt Bridge
+与客户端 Transport → 启动行情 Hub → 构造主窗口 → 进入 Qt 事件循环。
+退出时按相反顺序停止行情、断开 Transport 并关闭日志，确保后台线程
+不会在 QWidget 销毁后继续回调。
+"""
 
 from __future__ import annotations
 
@@ -14,6 +20,7 @@ from .ui.theme import apply_workbench_theme
 
 
 def main() -> int:
+    """启动 oxApp GUI 并在退出时释放客户端、行情和日志资源。"""
     logger = create_startup_logger()  # 每次进程启动新建 oxTrader 日志，记录启动和异常边界。
     client: ClientProtocolClient | None = None
     market_hub: MarketHub | None = None
@@ -29,10 +36,12 @@ def main() -> int:
         app = QApplication(sys.argv)  # 创建 Qt 主线程事件循环，所有 QWidget 必须归它管理。
         apply_workbench_theme(app)  # 正式入口和测试构造窗口共用同一套 vn.py 风格工作台主题。
         bridge = AsyncQtBridge()  # 建立后台 Transport 到 GUI 主线程的信号边界。
+        # 当前默认使用 C++ Mock 后端，既能演示完整页面，又不会误连生产服务。
         client = ClientProtocolClient(MockBackendTransport())  # #24 默认走本地 C++ Mock 后端，验证 #1-#8；仍不连接真实 HP-Socket、数据库或柜台。
         client.set_response_callback(bridge.publish_response)  # 响应先进入 Qt queued signal，再由页面消费。
         client.set_state_callback(lambda state, reason: bridge.publish_state(state.value, reason))  # 状态同样禁止后台线程直接碰控件。
         client.connect()  # 连接状态通过 bridge 更新状态栏。
+        # 行情 Hub 与普通请求 Transport 分离，避免高频行情阻塞管理页面请求。
         market_config = load_market_config()
         market_hub = MarketHub(  # 行情是独立的高频开发链路，绝不进入 MockBackendTransport/System V Query Worker。
             create_market_feed(market_config),

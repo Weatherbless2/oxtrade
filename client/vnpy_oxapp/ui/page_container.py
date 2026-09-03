@@ -1,4 +1,9 @@
-"""后续管理页面共用的加载、空数据、错误和无权限状态容器。"""
+"""业务页面共用的加载、空数据、错误和无权限状态容器。
+
+容器让所有状态占用同一个 ``QStackedWidget`` 区域，状态切换不会改变
+外层三栏布局尺寸。业务页只需要在请求生命周期调用 ``show_state``，
+不必重复实现加载动画、空结果和权限错误的布局。
+"""
 
 from __future__ import annotations
 
@@ -13,6 +18,8 @@ except ImportError:
 
 
 class PageState(str, Enum):
+    """页面状态键；值用于日志、测试和后续状态映射。"""
+
     CONTENT = "content"
     LOADING = "loading"
     EMPTY = "empty"
@@ -22,9 +29,10 @@ class PageState(str, Enum):
 
 if PYSIDE_AVAILABLE:
     class PageContainer(QWidget):
-        """页面内容与所有通用状态共用同一尺寸容器，切换不引起主布局跳动。"""
+        """让业务内容与所有通用状态共享同一尺寸的容器。"""
 
         def __init__(self, content: QWidget, parent: QWidget | None = None) -> None:
+            """创建内容插槽和四种预建状态标签。"""
             super().__init__(parent)
             self._stack = QStackedWidget(self)  # 所有页面状态共享一个堆叠容器，切换不改变外层布局尺寸。
             self._content = content  # 保存真实页面插槽，后续 #18-#21 只替换这里的内容。
@@ -43,6 +51,7 @@ if PYSIDE_AVAILABLE:
             self.show_state(PageState.CONTENT)  # 构造完成后默认显示真实内容。
 
         def show_state(self, state: PageState, detail: str = "") -> None:
+            """切换可见状态；detail 非空时覆盖默认提示文案。"""
             if state is PageState.CONTENT:  # 正常数据已准备好，切回页面内容。
                 self._stack.setCurrentWidget(self._content)  # 不销毁其他状态，后续请求可复用。
                 return
@@ -52,6 +61,7 @@ if PYSIDE_AVAILABLE:
 
         @staticmethod
         def _state_label(text: str) -> QLabel:
+            """创建带默认文案和统一 objectName 的状态标签。"""
             label = QLabel(text)  # 标签承载统一状态文案。
             label.setObjectName("pageStateLabel")  # 交给全局工作台主题统一显示加载、空数据和异常态。
             label.setProperty("default_text", text)  # 保存默认文案，下一次无 detail 时恢复。
@@ -59,6 +69,8 @@ if PYSIDE_AVAILABLE:
             return label  # 返回给堆叠容器接管生命周期。
 else:
     class PageContainer:  # type: ignore[no-redef]
+        """无 PySide6 时的明确失败边界。"""
+
         def __init__(self, *args, **kwargs) -> None:
             del args, kwargs
             raise RuntimeError("Qt UI requires PySide6; install client/requirements.txt first")

@@ -17,6 +17,9 @@ PYTHONPATH=client python -m unittest discover -s tests/python -v
 PYTHONPATH=client python -m vnpy_oxapp.app
 ```
 
+开发/验收时可使用 `QT_QPA_PLATFORM=offscreen` 运行无窗口 Qt 测试；有 WSLg/X11 时直接启动即可看到桌面窗口。
+客户端启动默认进入登录欢迎页，使用 Mock 用户（例如 `yangjh` / `mock-password`）登录后进入工作台。
+
 没有安装 PySide6 或 vn.py 时，消息、Mock 服务和请求关联的纯 Python 测试仍可运行；启动 Qt
 客户端会给出明确的依赖提示。
 
@@ -32,12 +35,18 @@ vnpy_oxapp/
   services/        后续页面共用的服务接口和 Mock 业务数据
   gateway.py       vn.py BaseGateway 适配层（可选依赖）
   logging.py       oxTrader 启动日志和组件加载计时
-  ui/              左导航、右页面容器和 Qt 线程桥接（可选依赖）
+  ui/              固定三栏壳层、标题栏、登录页、导航、配置面板、业务页和 Qt 线程桥接（可选依赖）
+    shell_state.py    壳层会话/菜单/面板状态（不保存密码）
+    menu_config.py    一级菜单和左侧菜单配置
+    title_bar.py      无边框标题栏和窗口控制
+    navigation_panel.py  固定左侧系统菜单
+    config_panel.py   账号与配置面板
+    welcome_page.py   欢迎首页、产品占位和走势占位图
 ```
 
 启动客户端时会在仓库根目录 `logs/` 生成 `oxTrader_YYYYMMDD_HHMMSS.log`，并记录启动、连接、
-页面构造和停止事件。`OxAppMainWindow.load_timings` 保存布局和页面构造耗时，后续 #18-#21
-可以继续对具体业务控件分别计时。
+页面构造和停止事件。当前壳层采用无边框窗口、深蓝主题和固定三栏（左导航/中央工作区/右配置面板），
+右面板可以显示/隐藏但不支持 Dock 浮动或拖拽。`OxAppMainWindow.load_timings` 保存布局和页面构造耗时。
 
 后续真实后台接入时，只需要新增 `HpSocketTransport` 和正式协议 Codec，并保持页面和服务接口不变。
 

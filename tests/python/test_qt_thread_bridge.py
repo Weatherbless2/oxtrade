@@ -71,8 +71,8 @@ class QtBridgeImportTest(unittest.TestCase):
         window.close()
         app.processEvents()
 
-    def test_main_window_keeps_navigation_and_log_page_separate(self) -> None:
-        """验收运行日志由左侧导航进入，业务页不再被固定底部 Dock 挤压。"""
+    def test_main_window_uses_fixed_navigation_and_config_panels(self) -> None:
+        """验收新壳层使用固定三栏，运行日志由左侧导航进入。"""
         from PySide6.QtWidgets import QApplication, QDockWidget
         from vnpy_oxapp.ui.main_window import OxAppMainWindow
         from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge
@@ -80,14 +80,15 @@ class QtBridgeImportTest(unittest.TestCase):
         app = QApplication.instance() or QApplication([])
         window = OxAppMainWindow(AsyncQtBridge())
         dock_names = {dock.objectName() for dock in window.findChildren(QDockWidget)}
-        self.assertTrue({"navigationDock", "runtimeDock"}.issubset(dock_names))
-        self.assertNotIn("logDock", dock_names)
+        self.assertEqual(set(), dock_names)
+        self.assertEqual(210, window._navigation_panel.width())
+        self.assertEqual(282, window._config_panel.width())
         self.assertEqual(9, window._navigation.count())
         self.assertEqual(9, window._pages.count())
-        self.assertEqual("概览", window._navigation.item(0).text())
-        self.assertEqual("行情中心", window._navigation.item(5).text())
-        self.assertEqual("交易终端", window._navigation.item(6).text())
-        self.assertEqual("登录会话", window._navigation.item(7).text())
-        self.assertEqual("运行日志", window._navigation.item(8).text())
+        self.assertEqual("⌂  工作台", window._navigation.item(0).text())
+        self.assertEqual("⌁  行情中心", window._navigation.item(5).text())
+        self.assertEqual("⇄  交易终端", window._navigation.item(6).text())
+        self.assertEqual("●  登录会话", window._navigation.item(7).text())
+        self.assertEqual("≡  运行日志", window._navigation.item(8).text())
         window.close()
         app.processEvents()
