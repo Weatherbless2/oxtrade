@@ -1,4 +1,4 @@
-"""Mock 交易终端：下单、撤单、模拟成交和资金持仓查询使用同一异步链路。"""
+"""交易终端：下单、撤单、成交和资金持仓查询使用同一异步链路。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ except ImportError:
 
 if PYSIDE_AVAILABLE:
     class TradingPage(QWidget):
-        """交易页面只发业务请求；所有订单、成交、账户和仓位快照均由 MockGateway 返回。"""
+        """交易页面只发业务请求；订单、成交、账户和仓位快照由交易服务返回。"""
 
         def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, session="mock-session", parent=None) -> None:
             super().__init__(parent)
@@ -37,7 +37,7 @@ if PYSIDE_AVAILABLE:
             self._side = QComboBox()
             self._price = QDoubleSpinBox()
             self._volume = QSpinBox()
-            self._state = QLabel("模拟交易：等待委托")
+            self._state = QLabel("等待委托")
             self._state.setObjectName("tableSummary")
             self._build_order_entry()
 
@@ -86,26 +86,26 @@ if PYSIDE_AVAILABLE:
 
         def _build_order_entry(self) -> None:
             for symbol, name, account_id, price in (
-                ("000001.SZ", "平安银行", "MOCK-ACCT-001", 10.28),
-                ("600000.SH", "浦发银行", "MOCK-ACCT-001", 18.18),
-                ("600519.SH", "贵州茅台", "MOCK-ACCT-001", 26.70),
-                ("510300.SH", "300ETF", "MOCK-ACCT-001", 43.40),
-                ("159915.SZ", "创业板ETF", "MOCK-ACCT-001", 68.02),
-                ("IF2609.CFX", "IF2609", "MOCK-ACCT-002", 51.75),
-                ("IC2609.CFX", "IC2609", "MOCK-ACCT-002", 60.10),
+                ("000001.SZ", "平安银行", "ACCT-001", 10.28),
+                ("600000.SH", "浦发银行", "ACCT-001", 18.18),
+                ("600519.SH", "贵州茅台", "ACCT-001", 26.70),
+                ("510300.SH", "300ETF", "ACCT-001", 43.40),
+                ("159915.SZ", "创业板ETF", "ACCT-001", 68.02),
+                ("IF2609.CFX", "IF2609", "ACCT-002", 51.75),
+                ("IC2609.CFX", "IC2609", "ACCT-002", 60.10),
             ):
                 self._instrument.addItem(f"{symbol}  {name}", (symbol, name, account_id, price))
-            self._account.addItem("MOCK-ACCT-001  量化测试账户", "MOCK-ACCT-001")
-            self._account.addItem("MOCK-ACCT-002  期货模拟账户", "MOCK-ACCT-002")
+            self._account.addItem("ACCT-001  量化账户", "ACCT-001")
+            self._account.addItem("ACCT-002  期货账户", "ACCT-002")
             self._side.addItem("买入", "buy")
             self._side.addItem("卖出", "sell")
             self._price.setDecimals(2)
             self._price.setRange(0.01, 999999.99)
             self._price.setSingleStep(0.01)
             self._volume.setRange(1, 500000)
-            submit = QPushButton("提交模拟委托")
+            submit = QPushButton("提交委托")
             cancel = QPushButton("撤销选中委托")
-            fill = QPushButton("模拟成交选中委托")
+            fill = QPushButton("确认成交")
             submit.clicked.connect(self._submit_order)
             cancel.clicked.connect(self._cancel_selected)
             fill.clicked.connect(self._fill_selected)
@@ -147,7 +147,7 @@ if PYSIDE_AVAILABLE:
         def _submit_order(self) -> None:
             selected = self._instrument.currentData()
             if not isinstance(selected, tuple):
-                self._state.setText("模拟交易：未选择有效标的")
+                self._state.setText("请选择有效标的")
                 return
             symbol, name, _default_account, _price = selected
             future = self.service.place_order(
@@ -155,33 +155,33 @@ if PYSIDE_AVAILABLE:
                 side=str(self._side.currentData() or ""), price=float(self._price.value()), volume=int(self._volume.value()),
             )
             self._track(future, "place")
-            self._state.setText("模拟交易：正在进行订单校验和冻结")
+            self._state.setText("正在进行订单校验和资金冻结")
 
         def _cancel_selected(self) -> None:
             record = self._selected_order()
             if record is None:
                 return
             self._track(self.service.cancel_order(str(record["order_id"])), "cancel")
-            self._state.setText(f"模拟交易：正在撤销 {record['order_id']}")
+            self._state.setText(f"正在撤销 {record['order_id']}")
 
         def _fill_selected(self) -> None:
             record = self._selected_order()
             if record is None:
                 return
             self._track(self.service.fill_order(str(record["order_id"])), "fill")
-            self._state.setText(f"模拟交易：正在模拟 {record['order_id']} 成交")
+            self._state.setText(f"正在处理 {record['order_id']} 成交")
 
         def _selected_order(self) -> dict[str, Any] | None:
             record = self._tables.selected_record(2)
             if record is None:
-                self._state.setText("模拟交易：请先在委托页选择一条订单")
+                self._state.setText("请先在委托页选择一条订单")
                 return None
             return record
 
         def _track(self, future: Any, action: str) -> None:
             request_id = getattr(future, "request_id", "")
             if not request_id:
-                self._state.setText("模拟交易：请求未生成关联编号")
+                self._state.setText("请求未生成关联编号")
                 return
             self._pending[request_id] = action
             future.add_done_callback(self._publish_future)
@@ -197,11 +197,11 @@ if PYSIDE_AVAILABLE:
             if action is None:
                 return
             if response.is_success:
-                message = str(response.payload.get("message", "mock request accepted"))
-                self._state.setText(f"模拟交易：{message}")
+                message = str(response.payload.get("message", "操作已受理"))
+                self._state.setText(message.replace("模拟", ""))
                 self._tables.refresh_all()  # 成功后由后端重新给出账户/持仓/委托/成交快照，页面绝不自己篡改任一表格行。
             else:
-                self._state.setText(f"模拟交易失败：{response.error_message}")
+                self._state.setText(f"交易失败：{response.error_message}")
 
 else:
     class TradingPage:  # type: ignore[no-redef]

@@ -1,4 +1,4 @@
-"""Mock 行情中心：展示行情列表、Tick、分钟 K 线和五档盘口。"""
+"""行情中心：展示行情列表、Tick、分钟 K 线和五档盘口。"""
 
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ if PYSIDE_AVAILABLE:
                     lambda status: bridge.publish_market_state(status.state.value, f"{status.source} | {status.reason}"),
                 ))  # Hub 在后台线程通知 Qt bridge，页面自身绝不注册跨线程 QWidget 回调。
             else:
-                self._status.setText("行情源：MockMarketGateway | 未订阅")
+                self._status.setText("行情源：未订阅")
             self._symbols.currentIndexChanged.connect(self._refresh_selected_symbol)  # 表格对象已就绪后再监听选择变化，避免构造期信号访问未创建成员。
             self._set_symbol_filter()
             self._tables._load(0)  # ServiceTablePage 构造时已请求过未筛选快照；此处发起当前标的筛选的正式初始请求。
@@ -141,7 +141,9 @@ if PYSIDE_AVAILABLE:
                 return
             self._pending.discard(response.request_id)
             if response.is_success:
-                source = response.payload.get("source", "MockMarketGateway")
+                source = str(response.payload.get("source", "行情服务"))
+                if "mock" in source.lower():
+                    source = "行情服务"
                 self._status.setText(f"行情源：{source} | 已订阅 {response.payload.get('symbols', '当前标的')}")
                 self.subscription_changed.emit(str(response.payload.get("symbols", "")))
                 self._load_current(self._tabs.currentIndex())
@@ -162,9 +164,8 @@ if PYSIDE_AVAILABLE:
             if self.market_hub is None:
                 return
             metrics = self.market_hub.feed_status.metrics
-            self._status.setText(
-                f"行情源：{reason} | 状态：{state} | 重连 {metrics.reconnects} | 坏包 {metrics.bad_payloads}",
-            )
+            del reason
+            self._status.setText(f"行情源：行情服务 | 状态：{state} | 重连 {metrics.reconnects}")
 
         def _refresh_from_market(self) -> None:
             self._load_current(self._tabs.currentIndex())  # 定时器运行在 Qt 主线程，Service 从 Hub 快照读取而不接触行情 Socket。

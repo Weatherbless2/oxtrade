@@ -1,4 +1,4 @@
-"""oxApp 未登录欢迎页和 Mock 会话入口。
+"""oxApp 未登录欢迎页和会话入口。
 
 页面负责采集并校验账号/密码、提交 ``UserService`` 请求以及把结果
 转换成 ``session_changed``/``login_state_changed`` 信号。它不保存明文
@@ -73,7 +73,8 @@ if PYSIDE_AVAILABLE:
         def _build(self) -> None:
             """构造原型中的品牌区、登录表单、辅助入口和错误提示。"""
             root = QHBoxLayout(self)
-            root.setContentsMargins(90, 55, 90, 55)
+            # 原型规定约 920×560 的居中卡片；外层不拉伸卡片，避免在大屏上变成整页深色布局。
+            root.setContentsMargins(0, 0, 0, 0)
             root.setSpacing(0)
 
             # 外层卡片拆成品牌区与表单区，后续可替换品牌资源而不影响认证逻辑。
@@ -103,7 +104,7 @@ if PYSIDE_AVAILABLE:
             brand_layout.addWidget(brand_title)
             brand_layout.addWidget(brand_text)
             brand_layout.addStretch(2)
-            version = QLabel("基础壳层 · 深蓝主题 · Mock 环境")
+            version = QLabel("专业工作台 · v1.1")
             version.setObjectName("loginVersion")
             brand_layout.addWidget(version)
 
@@ -113,11 +114,11 @@ if PYSIDE_AVAILABLE:
             form_layout.setContentsMargins(54, 48, 54, 42)
             form_layout.setSpacing(10)
 
-            # 二维码/设置/找回/注册等入口先做明确的待接入反馈，不伪造功能成功。
+            # 辅助入口反馈保持简洁，具体能力由后续服务接入。
             tools = QHBoxLayout()
             tools.setSpacing(3)
             tools.addStretch(1)
-            for text, tooltip in (("▦", "二维码登录（待接入）"), ("⚙", "设置"), ("—", "最小化"), ("×", "关闭")):
+            for text, tooltip in (("▦", "二维码登录"), ("⚙", "设置"), ("—", "最小化"), ("×", "关闭")):
                 tool = QPushButton(text)
                 tool.setObjectName("loginToolButton")
                 tool.setToolTip(tooltip)
@@ -133,7 +134,7 @@ if PYSIDE_AVAILABLE:
 
             title = QLabel("登录工作台")
             title.setObjectName("loginFormTitle")
-            hint = QLabel("使用演示账号进入原型工作区")
+            hint = QLabel("请输入账号和密码以继续")
             hint.setObjectName("loginHint")
             form_layout.addWidget(title)
             form_layout.addWidget(hint)
@@ -161,11 +162,13 @@ if PYSIDE_AVAILABLE:
             account_label.setObjectName("loginLabel")
             self._account = QLineEdit("yangjh")
             self._account.setObjectName("loginInput")
+            self._account.setFixedHeight(40)
             self._account.setPlaceholderText("请输入账号")
             password_label = QLabel("密码")
             password_label.setObjectName("loginLabel")
-            self._password = QLineEdit("mock-password")
+            self._password = QLineEdit()
             self._password.setObjectName("loginInput")
+            self._password.setFixedHeight(40)
             self._password.setPlaceholderText("请输入密码")
             self._password.setEchoMode(QLineEdit.EchoMode.Password)
             fields.addWidget(account_label, 0, 0)
@@ -199,10 +202,10 @@ if PYSIDE_AVAILABLE:
             foot = QHBoxLayout()
             forgot = QPushButton("忘记密码")
             forgot.setObjectName("loginLink")
-            forgot.clicked.connect(lambda: self._set_error("找回密码功能待接入"))
+            forgot.clicked.connect(lambda: self._set_error("请联系管理员重置密码"))
             register = QPushButton("注册账号")
             register.setObjectName("loginLink")
-            register.clicked.connect(lambda: self._set_error("注册功能待接入"))
+            register.clicked.connect(lambda: self._set_error("请联系管理员开通账号"))
             foot.addWidget(forgot)
             foot.addStretch(1)
             foot.addWidget(QLabel("还没有账号？"))
@@ -212,9 +215,10 @@ if PYSIDE_AVAILABLE:
 
             card_layout.addWidget(brand, 105)
             card_layout.addWidget(form_panel, 95)
-            root.addWidget(card, 1)
+            card.setFixedSize(920, 560)
+            root.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
 
-            self._state = QLabel("未登录 · 仅用于 Mock 演示")
+            self._state = QLabel("未登录")
             self._state.setObjectName("loginState")
             self._state.setVisible(False)
 
@@ -239,7 +243,7 @@ if PYSIDE_AVAILABLE:
             return self._error
 
         def _select_login_mode(self, mode: str) -> None:
-            """切换密码/短信页签；短信登录当前只显示待接入提示。"""
+            """切换密码/短信登录方式。"""
             password_active = mode == "password"
             self._password_tab.setObjectName("loginTabActive" if password_active else "loginTab")
             self._sms_tab.setObjectName("loginTab" if password_active else "loginTabActive")
@@ -247,7 +251,7 @@ if PYSIDE_AVAILABLE:
                 button.style().unpolish(button)
                 button.style().polish(button)
             if not password_active:
-                self._set_error("短信登录为后续功能，当前请使用密码登录")
+                self._set_error("短信登录暂不可用，请使用密码登录")
             else:
                 self._set_error("")
 
@@ -289,7 +293,7 @@ if PYSIDE_AVAILABLE:
             """验证当前会话后提交注销请求，不直接清理本地状态。"""
             _session_id, user_name, _display_name, authenticated = self.session.snapshot()
             if not authenticated:
-                self._set_error("当前没有已登录的 Mock 会话")
+                self._set_error("当前没有已登录会话")
                 return
             # 先发布“退出中”，再发送请求：零延迟 MockTransport 可能在调用返回前完成。
             self.login_state_changed.emit(SessionState.LOGGING_OUT.value)
@@ -320,7 +324,7 @@ if PYSIDE_AVAILABLE:
                 self._logout_requests.discard(response.request_id)
                 if response.is_success:
                     self.session.logout()
-                    self._state.setText("Mock 会话已退出")
+                    self._state.setText("已退出登录")
                     self.login_state_changed.emit(SessionState.LOGGED_OUT.value)
                     self.session_changed.emit({"user_name": "未登录", "display_name": "", "session_id": "mock-session"})
                 else:

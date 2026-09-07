@@ -8,7 +8,7 @@ from vnpy_oxapp.connection import ClientProtocolClient
 from vnpy_oxapp.logging import ClientLogger
 from vnpy_oxapp.mock.mock_transport import MockTransport
 from vnpy_oxapp.ui.qt_bridge import AsyncQtBridge, PYSIDE_AVAILABLE
-from vnpy_oxapp.ui.shell_state import SessionState, ShellState
+from vnpy_oxapp.ui.shell_state import SessionState, ShellState, ThemeMode
 
 
 class ShellStateTest(unittest.TestCase):
@@ -61,7 +61,7 @@ class ShellUiTest(unittest.TestCase):
         from PySide6.QtCore import Qt
 
         self.assertTrue(self.window.windowFlags() & Qt.WindowType.FramelessWindowHint)
-        self.assertGreaterEqual(self.window.minimumWidth(), 1100)
+        self.assertEqual(820, self.window.minimumWidth())
         self.assertEqual(210, self.window._navigation_panel.width())
         self.assertEqual(282, self.window._config_panel.width())
         self.assertEqual(9, self.window._pages.count())
@@ -101,6 +101,32 @@ class ShellUiTest(unittest.TestCase):
         self.assertEqual("", page.password_input.text())
         self.assertEqual(SessionState.ERROR, self.window.state.session)
 
+    def test_visible_navigation_secondary_nav_and_switch_controls(self) -> None:
+        from vnpy_oxapp.ui.config_panel import SwitchControl
+        from vnpy_oxapp.ui.theme import DARK_NAVY_QSS
+
+        visible = self.window._navigation_panel.list_widget
+        self.assertEqual(6, visible.count())
+        self.assertEqual("⌂  工作台", visible.item(0).text())
+        self.assertEqual("⌁  行情中心", visible.item(1).text())
+        self.assertEqual("◇  策略研究", visible.item(2).text())
+        self.assertEqual("⇄  交易终端", visible.item(3).text())
+        self.assertEqual("▣  产品管理", visible.item(4).text())
+        self.assertEqual("⚙  系统管理", visible.item(5).text())
+
+        self.assertEqual(["overview", "watchlist", "recent"], list(self.window._secondary_nav.buttons))
+        self.window._title_bar._menu_buttons["market"].click()
+        self.assertEqual("market", self.window.state.primary_menu)
+        self.assertEqual(["market_overview", "market_watchlist", "market_alerts"], list(self.window._secondary_nav.buttons))
+        self.assertEqual("market_overview", self.window._secondary_nav.current_item_id)
+        self.window._title_bar._menu_buttons["research"].click()
+        self.assertEqual("research", self.window.state.primary_menu)
+        self.assertEqual("research_overview", self.window._secondary_nav.current_item_id)
+        self.assertEqual(0, visible.currentRow())
+        self.assertIsInstance(self.window._config_panel._auto_refresh, SwitchControl)
+        self.assertIn("QWidget#titleBar", DARK_NAVY_QSS)
+        self.assertNotIn(chr(92) + "n# 固定三栏", DARK_NAVY_QSS)
+
     def test_menu_product_and_config_panel_state(self) -> None:
         self.window._session_stack.setCurrentIndex(1)
         self.window.show()
@@ -121,3 +147,73 @@ class ShellUiTest(unittest.TestCase):
         self.window._title_bar._config_button.click()
         self.assertTrue(self.window._config_panel.isVisible())
         self.assertTrue(self.window.state.right_panel_visible)
+
+    def test_central_workspace_expands_when_panels_collapsed_or_hidden(self) -> None:
+        self._login()
+        self._pump(6)
+        body = self.window._workbench_body
+        central = self.window._central_workspace
+        nav = self.window._navigation_panel
+        config = self.window._config_panel
+
+        # 登录后进入宽屏工作台；标准状态下左栏 210 + 右栏 282 均可见。
+        self.assertGreaterEqual(self.window.minimumWidth(), 1180)
+        self.assertTrue(nav.isVisible())
+        self.assertTrue(config.isVisible())
+        base = central.width()
+        self.assertGreater(base, 300)
+
+        # 隐藏右侧配置面板后中央获得完整 282px，不保留空列。
+        config.panel_toggle_button.click()
+        self._pump(6)
+        self.assertFalse(config.isVisible())
+        self.assertFalse(self.window.state.right_panel_visible)
+        self.assertEqual(base + 282, central.width())
+
+        # 右栏隐藏后收起左栏：左右均隐藏，左栏不占宽度，中央铺满工作区。
+        self.window._title_bar._navigation_button.click()
+        self._pump(6)
+        self.assertFalse(nav.isVisible())
+        self.assertEqual(body.width(), central.width())
+
+        # 通过标题栏“导航”恢复左栏：回到右栏隐藏、左栏展开(210)状态。
+        self.window._title_bar._navigation_button.click()
+        self._pump(6)
+        self.assertTrue(nav.isVisible())
+        self.assertTrue(self.window.state.left_navigation_expanded)
+        self.assertEqual(210, nav.width())
+        self.assertEqual(body.width() - 210, central.width())
+
+    def test_theme_switch_updates_all_regions_and_preserves_selection(self) -> None:
+        from vnpy_oxapp.ui.theme import LIGHT_QSS
+
+        self._login()
+        self.window._welcome_page._products_list.setCurrentRow(1)
+        self.window._config_panel.panel_toggle_button.click()
+        self.assertFalse(self.window.state.right_panel_visible)
+
+        self.window._title_bar._theme_button.click()
+        self.assertEqual(ThemeMode.LIGHT, self.window.state.theme)
+        self.assertIn("#f3f6fa", self.app.styleSheet())
+        self.assertIn("#f3f6fa", LIGHT_QSS)
+        self.assertEqual("中证 500", self.window.state.selected_product)
+        self.assertFalse(self.window.state.right_panel_visible)
+        self.assertEqual("浅色", self.window._config_panel._theme.text())
+        self.assertEqual("主题：浅色", self.window._theme_status.text())
+
+        self.window._title_bar._theme_button.click()
+        self.assertEqual(ThemeMode.DARK_NAVY, self.window.state.theme)
+        self.assertEqual("深蓝", self.window._config_panel._theme.text())
+        self.assertTrue(self.window._title_bar._theme_button.toolTip())
+
+    def test_visible_shell_copy_uses_formal_business_wording(self) -> None:
+        from PySide6.QtWidgets import QLabel
+
+        self._login()
+        visible_text = " ".join(
+            widget.text()
+            for widget in self.window.findChildren(QLabel)
+            if widget.isVisible()
+        )
+        for forbidden in ("Mock", "模拟", "占位", "待接入", "不代表真实"):
+            self.assertNotIn(forbidden, visible_text)

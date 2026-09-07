@@ -42,6 +42,7 @@ if PYSIDE_AVAILABLE:
         primary_menu_selected = Signal(str)
         search_submitted = Signal(str)
         config_requested = Signal()
+        navigation_requested = Signal()
         theme_requested = Signal()
         account_requested = Signal()
         minimize_requested = Signal()
@@ -116,7 +117,10 @@ if PYSIDE_AVAILABLE:
             self._search.returnPressed.connect(lambda: self.search_submitted.emit(self._search.text().strip()))
             root.addWidget(self._search)
 
-            # 配置、主题、账号入口不在标题栏内展开面板，由主窗口统一管理。
+            # 导航、配置、主题、账号入口不在标题栏内展开面板，由主窗口统一管理。
+            self._navigation_button = self._icon_button("☰", "显示或隐藏系统菜单", "titleNavigationButton")
+            self._navigation_button.clicked.connect(self.navigation_requested)
+            root.addWidget(self._navigation_button)
             self._config_button = self._icon_button("⚙", "系统配置", "titleConfigButton")
             self._config_button.clicked.connect(self.config_requested)
             root.addWidget(self._config_button)
@@ -168,6 +172,11 @@ if PYSIDE_AVAILABLE:
             """返回账号入口按钮。"""
             return self._account_button
 
+        @property
+        def navigation_button(self) -> QPushButton:
+            """返回系统菜单显示/隐藏入口。"""
+            return self._navigation_button
+
         def _select_menu(self, item_id: str) -> None:
             """更新按钮选中态并向主窗口广播一级菜单 ID。"""
             self.set_active(item_id)
@@ -183,6 +192,12 @@ if PYSIDE_AVAILABLE:
             self._account_name = display_name or user_name or "未登录"
             initial = self._account_name[:1].upper() if self._account_name else "U"
             self._account_button.setText(f"{initial}  {self._account_name}  ▾")
+
+        def set_theme(self, mode: str) -> None:
+            """同步主题入口的图标提示，保留快捷切换语义。"""
+            light = str(mode).lower() == "light"
+            self._theme_button.setText("☼" if light else "◐")
+            self._theme_button.setToolTip("切换为深蓝主题" if light else "切换为浅色主题")
 
         def set_maximized(self, maximized: bool) -> None:
             """同步窗口当前模式，并切换最大化按钮的图标与提示。"""

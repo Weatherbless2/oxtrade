@@ -22,24 +22,25 @@ class SessionState(str, Enum):
 
 
 class ThemeMode(str, Enum):
-    """当前支持的主题模式；后续主题扩展可在此增加枚举值。"""
+    """当前支持的主题模式。"""
 
     DARK_NAVY = "dark_navy"
+    LIGHT = "light"
 
 
 @dataclass
 class ShellState:
     """工作台展示状态快照。
 
-    默认值对应未登录、深蓝主题、右侧面板显示和第一个产品占位。
-    ``selected_product_code`` 当前是展示文案，不代表真实合约或资金数据。
+    默认值对应未登录、深蓝主题、右侧面板显示和第一个产品。
     """
 
     session: SessionState = SessionState.LOGGED_OUT
     primary_menu: str = "home"
     system_menu: str = "workbench"
+    left_navigation_expanded: bool = True
     right_panel_visible: bool = True
     theme: ThemeMode = ThemeMode.DARK_NAVY
     selected_product: str = "沪深 300"
-    selected_product_code: str = "IF 主力 · 模拟数据"
+    selected_product_code: str = "IF 主力"
     window_maximized: bool = False

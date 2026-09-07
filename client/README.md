@@ -39,14 +39,22 @@ vnpy_oxapp/
     shell_state.py    壳层会话/菜单/面板状态（不保存密码）
     menu_config.py    一级菜单和左侧菜单配置
     title_bar.py      无边框标题栏和窗口控制
-    navigation_panel.py  固定左侧系统菜单
-    config_panel.py   账号与配置面板
-    welcome_page.py   欢迎首页、产品占位和走势占位图
+    navigation_panel.py  固定左侧系统菜单（可见六项，保留旧索引兼容）
+    secondary_navigation.py 一级菜单下方二级上下文导航
+    config_panel.py   账号与配置面板（自绘 Switch）
+    welcome_page.py   欢迎首页、产品摘要和走势状态
 ```
 
 启动客户端时会在仓库根目录 `logs/` 生成 `oxTrader_YYYYMMDD_HHMMSS.log`，并记录启动、连接、
-页面构造和停止事件。当前壳层采用无边框窗口、深蓝主题和固定三栏（左导航/中央工作区/右配置面板），
+页面构造和停止事件。当前壳层采用无边框窗口、深蓝/浅色主题、60px 标题栏、46px 二级导航、固定三栏（左导航/中央工作区/右配置面板）和底部状态栏，
 右面板可以显示/隐藏但不支持 Dock 浮动或拖拽。`OxAppMainWindow.load_timings` 保存布局和页面构造耗时。
+
+主题可通过标题栏主题按钮或右侧配置面板切换：
+
+```python
+from vnpy_oxapp.ui.theme import apply_workbench_theme
+apply_workbench_theme(app, "light")  # 或 "dark_navy"
+```
 
 后续真实后台接入时，只需要新增 `HpSocketTransport` 和正式协议 Codec，并保持页面和服务接口不变。
 

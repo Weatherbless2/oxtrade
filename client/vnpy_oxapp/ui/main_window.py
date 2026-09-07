@@ -42,7 +42,8 @@ from .login_page import LoginPage
 from .navigation_panel import NavigationPanel
 from .page_container import PageContainer
 from .qt_bridge import AsyncQtBridge
-from .shell_state import SessionState, ShellState
+from .shell_state import SessionState, ShellState, ThemeMode
+from .secondary_navigation import SecondaryNavigation
 from .theme import apply_workbench_theme
 from .title_bar import TitleBar
 from .welcome_page import WelcomePage
@@ -73,7 +74,7 @@ if PYSIDE_AVAILABLE:
             layout.setContentsMargins(12, 12, 12, 12)
             layout.addWidget(self._table)
             for level, module, message in (
-                ("INFO", "oxApp", "Mock 客户端已连接"),
+                ("INFO", "oxApp", "客户端连接已建立"),
                 ("INFO", "oxApp.ui", "工作台布局加载完成"),
                 ("INFO", "oxApp.ui", "等待管理页面请求"),
             ):
@@ -119,7 +120,7 @@ if PYSIDE_AVAILABLE:
             state = "已登录" if authenticated else "未登录"
             self._summary.setText(
                 f"状态：{state}\n用户：{display_name or user_name}\n会话：{session_id}\n\n"
-                "认证由 UserService/Transport 提供；本阶段仅展示 Mock 会话。"
+                "认证状态由会话服务提供。"
             )
 
 
@@ -157,22 +158,26 @@ if PYSIDE_AVAILABLE:
             self.setWindowTitle("oxApp 量化工作台")
             # 无边框窗口由 TitleBar 提供拖动和最小化/最大化/关闭操作。
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
-            self.resize(1440, 900)
-            self.setMinimumSize(1100, 680)
+            # 未登录时使用独立的小窗口；进入工作台后再切换到宽屏最小尺寸。
+            self.resize(960, 600)
+            self.setMinimumSize(820, 520)
             # 分开记录布局和页面构造耗时，便于后续定位业务页面加载瓶颈。
             with self.logger.measure("main_window_layout", sink=self.load_timings, module="oxApp.ui"):
                 self._build_layout()
             with self.logger.measure("main_window_pages", sink=self.load_timings, module="oxApp.ui"):
                 self._build_pages()
             self._connect_signals()
+            self._apply_theme(self.state.theme)
             if self.client is not None:
                 transport_name = type(self.client.transport).__name__
-                self._latency_status.setText(f"{transport_name} | -- ms")
+                self._latency_status.setText("延迟 -- ms")
                 self._show_connection_state(
                     self.client.transport.state.value,
                     f"窗口初始化时读取 {transport_name} 当前状态",
                 )
             self._navigation.setCurrentRow(0)
+            self._navigation_panel.select("workbench")
+            self._secondary_nav.set_primary("home")
             self._apply_session_visibility()
             self.logger.info(f"main_window_ready components={len(self.load_timings)}", module="oxApp.ui")
 
@@ -180,7 +185,7 @@ if PYSIDE_AVAILABLE:
             """构造标题栏、会话堆栈、固定三栏主体和底部状态栏。"""
             self._title_bar = TitleBar()
             self._navigation_panel = NavigationPanel()
-            self._navigation = self._navigation_panel.list_widget  # Existing tests/pages use this stable handle.
+            self._navigation = self._navigation_panel.compatibility_list_widget  # 旧索引兼容句柄；可见列表由 NavigationPanel 管理。
             self._config_panel = ConfigPanel()
             self._runtime_panel = self._config_panel  # Compatibility alias for status consumers.
             # _pages 保留为稳定兼容句柄，旧业务页和测试可以继续通过它访问中央堆栈。
@@ -193,15 +198,25 @@ if PYSIDE_AVAILABLE:
             self._session_stack.setObjectName("sessionStack")
             self._session_stack.addWidget(self._login_page)
 
-            # WorkbenchBody 的三项顺序就是左栏/中央/右栏，中央区使用 stretch=1 自动填充。
+            # WorkbenchBody 的三项顺序就是左栏/中央/右栏；中央再分为二级导航和页面堆栈。
+            self._secondary_nav = SecondaryNavigation()
+            central = QWidget()
+            central.setObjectName("centralWorkspace")
+            central_layout = QVBoxLayout(central)
+            central_layout.setContentsMargins(0, 0, 0, 0)
+            central_layout.setSpacing(0)
+            central_layout.addWidget(self._secondary_nav)
+            central_layout.addWidget(self._pages, 1)
+
             body = QWidget()
             body.setObjectName("workbenchBody")
             body_layout = QHBoxLayout(body)
             body_layout.setContentsMargins(0, 0, 0, 0)
             body_layout.setSpacing(0)
             body_layout.addWidget(self._navigation_panel)
-            body_layout.addWidget(self._pages, 1)
+            body_layout.addWidget(central, 1)
             body_layout.addWidget(self._config_panel)
+            self._central_workspace = central
             self._workbench_body = body
             self._session_stack.addWidget(body)
 
@@ -214,14 +229,26 @@ if PYSIDE_AVAILABLE:
             root_layout.addWidget(self._session_stack, 1)
             self.setCentralWidget(root)
 
-            # 状态栏仅在登录后显示；连接状态来自 Bridge，延迟字段保留后续统计入口。
-            self._connection_status = QLabel("连接状态: 未连接")
-            self._latency_status = QLabel("Mock | -- ms")
+            # 状态栏仅在登录后显示，左右两侧分别对应原型的连接/任务/消息和版本/日期。
+            self._connection_status = QLabel("● 连接正常")
+            self._connection_status.setObjectName("statusConnection")
+            self._task_status = QLabel("任务：0")
+            self._message_status = QLabel("消息：0")
+            self._latency_status = QLabel("延迟 -- ms")
+            self._theme_status = QLabel("主题：深蓝")
+            self._version_status = QLabel("oxApp v0.1.0")
+            self._date_status = QLabel(datetime.now().strftime("%Y-%m-%d"))
             status = QStatusBar(self)
             status.setObjectName("statusBar")
-            status.showMessage("就绪 | Mock 数据模式")
+            status.setSizeGripEnabled(False)
+            status.addWidget(self._connection_status)
+            status.addWidget(self._task_status)
+            status.addWidget(self._message_status)
+            status.addPermanentWidget(self._theme_status)
             status.addPermanentWidget(self._latency_status)
-            status.addPermanentWidget(self._connection_status)
+            status.addPermanentWidget(self._version_status)
+            status.addPermanentWidget(self._date_status)
+            status.showMessage("就绪")
             self.setStatusBar(status)
 
         def _build_pages(self) -> None:
@@ -262,24 +289,28 @@ if PYSIDE_AVAILABLE:
             """集中连接跨组件信号，确保所有路由都经过主窗口。"""
             self.bridge.state_changed.connect(self._show_connection_state)
             self.bridge.response_received.connect(self._handle_response)
+            # 旧列表仍驱动历史 page_index；新可见导航通过 menu_selected 走稳定 ID 路由。
             self._navigation.currentRowChanged.connect(self._select_page)
             self._navigation_panel.menu_selected.connect(self._on_system_menu)
+            self._secondary_nav.item_selected.connect(self._on_secondary_menu)
             self._title_bar.primary_menu_selected.connect(self._on_primary_menu)
             self._title_bar.search_submitted.connect(self._on_search)
             self._title_bar.config_requested.connect(self._show_config_panel)
-            self._title_bar.theme_requested.connect(self._show_theme_message)
+            self._title_bar.theme_requested.connect(self._toggle_theme)
             self._title_bar.account_requested.connect(self._show_config_panel)
             self._title_bar.minimize_requested.connect(self.showMinimized)
             self._title_bar.maximize_requested.connect(self._toggle_maximize)
             self._title_bar.close_requested.connect(self.close)
             self._config_panel.toggle_requested.connect(self._toggle_config_panel)
-            self._config_panel.theme_requested.connect(self._show_theme_message)
+            self._navigation_panel.toggle_requested.connect(self._toggle_navigation_panel)
+            self._title_bar.navigation_requested.connect(self._toggle_navigation_panel)
+            self._config_panel.theme_requested.connect(self._toggle_theme)
             self._config_panel.logout_requested.connect(self._logout)
             self._login_page.session_changed.connect(self._on_session_changed)
             self._login_page.login_state_changed.connect(self._on_login_state)
             self._welcome_page.product_selected.connect(self._on_product_selected)
             self._welcome_page.refresh_requested.connect(self._refresh_current)
-            self._welcome_page.add_product_requested.connect(lambda: self._show_status("产品添加功能待接入"))
+            self._welcome_page.add_product_requested.connect(lambda: self._show_status("已打开产品选择"))
 
         def _select_page(self, index: int) -> None:
             """响应旧列表句柄的行变化，切换中央页面并刷新兼容页。"""
@@ -293,23 +324,49 @@ if PYSIDE_AVAILABLE:
             """按左侧菜单 ID 更新壳层状态和中央页面索引。"""
             self.state.system_menu = item_id
             item = next((entry for entry in self._navigation_panel._menu_items if entry.item_id == item_id), None)
+            primary_for_side = {
+                "workbench": "home",
+                "market": "market",
+                "strategy": "strategy",
+                "trade": "trade",
+                "products": "admin",
+                "system": "admin",
+            }
+            primary_id = primary_for_side.get(item_id, self.state.primary_menu)
+            self.state.primary_menu = primary_id
+            self._title_bar.set_active(primary_id)
+            self._secondary_nav.set_primary(primary_id)
             if item is not None and item.page_index is not None:
                 self._pages.setCurrentIndex(item.page_index)
+                self._navigation_panel.select_legacy_page(item.page_index)
+            else:
+                self._welcome_page.set_context(item.label if item else item_id)
+                self._pages.setCurrentWidget(self._welcome_page)
             self._show_status(f"已打开{item.label if item else item_id}")
 
         def _on_primary_menu(self, item_id: str) -> None:
             """把标题栏一级菜单映射到左侧菜单或中性欢迎占位。"""
             self.state.primary_menu = item_id
+            self._secondary_nav.set_primary(item_id)
             labels = {"home": "首页", "market": "行情", "strategy": "策略", "trade": "交易", "research": "研究", "admin": "管理"}
             label = labels.get(item_id, item_id)
-            mapping = {"home": "workbench", "market": "market", "trade": "trade", "admin": "system"}
+            mapping = {"home": "workbench", "market": "market", "strategy": "strategy", "trade": "trade", "admin": "system"}
             side_id = mapping.get(item_id)
             if side_id is not None:
                 self._navigation_panel.select(side_id)
             else:
+                # 研究等暂未挂载业务页的一级菜单仍保留自己的二级上下文，
+                # 左栏只静默回到工作台，不再次触发路由覆盖当前一级菜单。
                 self._welcome_page.set_context(label)
-                self._navigation_panel.select("workbench")
+                self._navigation_panel.select("workbench", emit=False)
+                self._title_bar.set_active(item_id)
+                self._secondary_nav.set_primary(item_id)
             self._show_status(f"已切换到{label}")
+
+        def _on_secondary_menu(self, primary_id: str, item_id: str) -> None:
+            """二级导航暂不连接业务请求，只反馈当前上下文。"""
+            self.state.primary_menu = primary_id
+            self._show_status(f"已打开{item_id}")
 
         def _on_search(self, query: str) -> None:
             """处理全局搜索提交；当前阶段只在状态栏反馈，不伪造搜索结果。"""
@@ -321,20 +378,51 @@ if PYSIDE_AVAILABLE:
             self.state.right_panel_visible = True
             self._config_panel.panel_toggle_button.setText("›")
             self._config_panel.panel_toggle_button.setToolTip("隐藏配置面板")
+            self._sync_panel_geometry()
             self._show_status("系统配置已打开")
+
+        def _toggle_navigation_panel(self) -> None:
+            """切换左侧导航展开/收起，保留选中菜单和中央页面状态。"""
+            collapsed = not self._navigation_panel.collapsed
+            self._navigation_panel.set_collapsed(collapsed)
+            self.state.left_navigation_expanded = not collapsed
+            self._sync_panel_geometry()
+            self._show_status("已收起系统菜单" if collapsed else "已展开系统菜单")
 
         def _toggle_config_panel(self) -> None:
             """切换右侧面板可见性；中央页面由 Qt layout 自动扩展。"""
-            visible = not self._config_panel.isVisible()
+            visible = not self.state.right_panel_visible
             self._config_panel.setVisible(visible)
             self.state.right_panel_visible = visible
             self._config_panel.panel_toggle_button.setText("›" if visible else "‹")
             self._config_panel.panel_toggle_button.setToolTip("隐藏配置面板" if visible else "显示配置面板")
+            self._sync_panel_geometry()
             self._show_status("已显示右侧配置面板" if visible else "已隐藏右侧配置面板")
 
-        def _show_theme_message(self) -> None:
-            """反馈当前主题；多主题切换留待主题配置阶段。"""
-            self._show_status("当前主题：深蓝（默认）")
+        def _sync_panel_geometry(self) -> None:
+            """右栏隐藏且左栏收起时左栏不占宽度，中央工作区铺满剩余空间。"""
+            hide_left = not self.state.left_navigation_expanded and not self.state.right_panel_visible
+            self._navigation_panel.setVisible(not hide_left)
+
+        def _toggle_theme(self) -> None:
+            """在深蓝与浅色主题间切换，并保留当前工作台状态。"""
+            next_mode = ThemeMode.LIGHT if self.state.theme is ThemeMode.DARK_NAVY else ThemeMode.DARK_NAVY
+            self._apply_theme(next_mode)
+            self._show_status(f"已切换为{'浅色' if next_mode is ThemeMode.LIGHT else '深蓝'}主题")
+
+        def _apply_theme(self, mode: ThemeMode | str) -> None:
+            """应用主题 token 并同步标题栏、右侧配置和状态栏摘要。"""
+            if isinstance(mode, ThemeMode):
+                requested = mode.value
+            else:
+                requested = str(mode)
+            app = QApplication.instance()
+            normalized = apply_workbench_theme(app, requested) if app is not None else requested
+            self.state.theme = ThemeMode.LIGHT if normalized == ThemeMode.LIGHT.value else ThemeMode.DARK_NAVY
+            label = "浅色" if self.state.theme is ThemeMode.LIGHT else "深蓝"
+            self._config_panel.set_theme(self.state.theme.value)
+            self._theme_status.setText(f"主题：{label}")
+            self._title_bar.set_theme(self.state.theme.value)
 
         def _on_product_selected(self, name: str, code: str) -> None:
             """保存欢迎页的产品占位选择，供后续业务数据源接入。"""
@@ -367,15 +455,15 @@ if PYSIDE_AVAILABLE:
             except ValueError:
                 self.state.session = SessionState.ERROR
             if state == SessionState.LOGGING_IN.value:
-                self._show_status("正在登录 Mock 会话…")
+                self._show_status("正在登录…")
             elif state == SessionState.LOGGING_OUT.value:
-                self._show_status("正在退出 Mock 会话…")
+                self._show_status("正在退出登录…")
 
         def _on_session_changed(self, data: dict) -> None:
             """接收登录/退出会话事件，统一刷新标题栏、配置面板和页面可见性。"""
             user_name = str(data.get("user_name", ""))
-            display_name = str(data.get("display_name", ""))
-            session_id = str(data.get("session_id", "mock-session"))
+            display_name = self._display_name_for_ui(data.get("display_name", ""), user_name)
+            session_id = str(data.get("session_id", ""))
             if user_name == "未登录":
                 # 退出事件必须清理所有账号展示，并回到登录页。
                 self.state.session = SessionState.LOGGED_OUT
@@ -384,7 +472,7 @@ if PYSIDE_AVAILABLE:
                 self._welcome_page.set_user("用户")
                 self._apply_session_visibility()
                 self._show_status("已退出登录")
-                self._log_panel.append("INFO", "oxApp.auth", "Mock 会话已退出")
+                self._log_panel.append("INFO", "oxApp.auth", "会话已退出")
                 return
             # 登录成功只使用服务返回的非敏感摘要更新 UI。
             self.state.session = SessionState.LOGGED_IN
@@ -394,7 +482,7 @@ if PYSIDE_AVAILABLE:
             self._session_page.refresh(self.session)
             self._apply_session_visibility()
             self._show_status("登录成功")
-            self._log_panel.append("INFO", "oxApp.auth", f"Mock 会话已切换: {user_name}")
+            self._log_panel.append("INFO", "oxApp.auth", f"会话已切换: {user_name}")
 
         def _apply_session_visibility(self) -> None:
             """根据 ClientSession 和 ShellState 的共同结果显示登录页或工作台。"""
@@ -402,6 +490,21 @@ if PYSIDE_AVAILABLE:
             self._session_stack.setCurrentIndex(1 if logged_in else 0)
             self._title_bar.setVisible(logged_in)
             self.statusBar().setVisible(logged_in)
+            if not self.isMaximized():
+                if logged_in:
+                    self.setMinimumSize(1180, 720)
+                    self.resize(1440, 900)
+                else:
+                    self.setMinimumSize(820, 520)
+                    self.resize(960, 600)
+
+        @staticmethod
+        def _display_name_for_ui(display_name: object, user_name: str = "") -> str:
+            """清理演示服务的前缀，避免内部实现标签进入正式界面文案。"""
+            value = str(display_name or "").strip()
+            if value.lower().startswith("mock "):
+                value = value[5:].strip()
+            return value or str(user_name or "用户").strip() or "用户"
 
         def _toggle_maximize(self) -> None:
             """在普通和最大化窗口模式之间切换，并同步标题栏图标。"""
@@ -415,9 +518,24 @@ if PYSIDE_AVAILABLE:
 
         def _show_connection_state(self, state: str, reason: str) -> None:
             """把 Bridge 的 Transport 状态同步到状态栏、右面板和日志页。"""
-            self._connection_status.setText(f"连接状态: {state}")
+            connected = state.lower() in {"connected", "ready", "正常"}
+            formal_state = "连接正常" if connected else self._formal_connection_state(state)
+            self._connection_status.setText(f"● {formal_state}")
+            self._connection_status.setProperty("connected", connected)
+            self._connection_status.style().unpolish(self._connection_status)
+            self._connection_status.style().polish(self._connection_status)
             self._config_panel.set_connection(state, reason)
             self._log_panel.append("INFO", "oxApp.transport", f"连接状态: {state} | {reason}")
+
+        @staticmethod
+        def _formal_connection_state(state: str) -> str:
+            """将底层连接状态映射为用户可读的正式文案。"""
+            value = str(state or "").lower()
+            if value in {"connecting", "连接中"}:
+                return "连接中"
+            if value in {"disconnected", "断开", "closed"}:
+                return "未连接"
+            return "连接异常"
 
         def _show_status(self, message: str) -> None:
             """在底部状态栏显示一条短时反馈消息。"""
