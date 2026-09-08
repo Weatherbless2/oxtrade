@@ -128,7 +128,7 @@ if PYSIDE_AVAILABLE:
             title = QLabel("欢迎回来")
             title.setObjectName("welcomeTitle")
             self._title = title
-            description = QLabel("查看系统概览、产品状态与近期工作。")
+            description = QLabel("")
             description.setObjectName("welcomeDescription")
             heading_text = QVBoxLayout()
             heading_text.setContentsMargins(0, 0, 0, 0)
@@ -156,7 +156,7 @@ if PYSIDE_AVAILABLE:
             toolbar.addWidget(select)
             toolbar.addWidget(refresh)
             toolbar.addStretch(1)
-            sync = QLabel("最后同步：刚刚")
+            sync = QLabel("")
             sync.setObjectName("mutedLabel")
             toolbar.addWidget(sync)
             content.addLayout(toolbar)
@@ -166,7 +166,7 @@ if PYSIDE_AVAILABLE:
             metrics.setHorizontalSpacing(12)
             metrics.setVerticalSpacing(12)
             metric_items = (
-                ("连接状态", "已连接", "服务运行正常"),
+                ("连接状态", "已连接", ""),
                 ("关注产品", "12", "较昨日 +2"),
                 ("今日任务", "08", "全部已完成"),
                 ("待处理消息", "03", "请及时查看"),
@@ -184,7 +184,7 @@ if PYSIDE_AVAILABLE:
             self._chart_title = chart_card.findChild(QLabel, "cardTitle")
             chart_head = chart_card.layout().itemAt(0).widget()
             if chart_head is not None:
-                status = QLabel("数据状态：暂无更新")
+                status = QLabel("")
                 status.setObjectName("cardStatus")
                 chart_head.layout().addWidget(status)
             chart_card.layout().addWidget(ChartPlaceholder())

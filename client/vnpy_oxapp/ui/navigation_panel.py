@@ -70,7 +70,7 @@ if PYSIDE_AVAILABLE:
                 self._list.addItem(row)
             layout.addWidget(self._list, 1)
 
-            footer = QLabel("工作台 · v1.1")
+            footer = QLabel("")
             footer.setObjectName("navigationFooter")
             self._footer = footer
             layout.addWidget(footer)

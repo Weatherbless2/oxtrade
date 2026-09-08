@@ -120,7 +120,7 @@ if PYSIDE_AVAILABLE:
             state = "已登录" if authenticated else "未登录"
             self._summary.setText(
                 f"状态：{state}\n用户：{display_name or user_name}\n会话：{session_id}\n\n"
-                "认证状态由会话服务提供。"
+                ""
             )
 
 

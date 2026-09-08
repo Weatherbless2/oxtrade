@@ -215,5 +215,9 @@ class ShellUiTest(unittest.TestCase):
             for widget in self.window.findChildren(QLabel)
             if widget.isVisible()
         )
-        for forbidden in ("Mock", "模拟", "占位", "待接入", "不代表真实"):
+        for forbidden in (
+            "Mock", "模拟", "占位", "待接入", "不代表真实",
+            "统一入口", "行情 · 交易 · 管理", "安全连接", "连接状态可见",
+            "服务状态：可用", "专业工作台", "服务运行正常", "最后同步",
+        ):
             self.assertNotIn(forbidden, visible_text)
