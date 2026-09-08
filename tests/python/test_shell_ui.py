@@ -101,6 +101,26 @@ class ShellUiTest(unittest.TestCase):
         self.assertEqual("", page.password_input.text())
         self.assertEqual(SessionState.ERROR, self.window.state.session)
 
+    def test_login_window_can_toggle_maximized(self) -> None:
+        """登录页默认小窗，但可通过右上角按钮进入/退出最大化。"""
+        self.window.show()
+        self.app.processEvents()
+        button = self.window._login_page._maximize_button
+        self.assertFalse(self.window.isMaximized())
+        self.assertEqual("最大化", button.toolTip())
+
+        button.click()
+        self.app.processEvents()
+        self.assertTrue(self.window.isMaximized())
+        self.assertEqual("还原", button.toolTip())
+        self.assertEqual("❐", button.text())
+
+        button.click()
+        self.app.processEvents()
+        self.assertFalse(self.window.isMaximized())
+        self.assertEqual("最大化", button.toolTip())
+        self.assertEqual("□", button.text())
+
     def test_visible_navigation_secondary_nav_and_switch_controls(self) -> None:
         from vnpy_oxapp.ui.config_panel import SwitchControl
         from vnpy_oxapp.ui.theme import DARK_NAVY_QSS

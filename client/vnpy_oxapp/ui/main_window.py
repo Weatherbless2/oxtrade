@@ -301,6 +301,7 @@ if PYSIDE_AVAILABLE:
             self._title_bar.minimize_requested.connect(self.showMinimized)
             self._title_bar.maximize_requested.connect(self._toggle_maximize)
             self._title_bar.close_requested.connect(self.close)
+            self._login_page.maximize_requested.connect(self._toggle_maximize)
             self._config_panel.toggle_requested.connect(self._toggle_config_panel)
             self._navigation_panel.toggle_requested.connect(self._toggle_navigation_panel)
             self._title_bar.navigation_requested.connect(self._toggle_navigation_panel)
@@ -497,6 +498,8 @@ if PYSIDE_AVAILABLE:
                 else:
                     self.setMinimumSize(820, 520)
                     self.resize(960, 600)
+            self._title_bar.set_maximized(self.isMaximized())
+            self._login_page.set_maximized(self.isMaximized())
 
         @staticmethod
         def _display_name_for_ui(display_name: object, user_name: str = "") -> str:
@@ -551,6 +554,7 @@ if PYSIDE_AVAILABLE:
             if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "_title_bar"):
                 self.state.window_maximized = self.isMaximized()
                 self._title_bar.set_maximized(self.state.window_maximized)
+                self._login_page.set_maximized(self.state.window_maximized)
 
 else:
     class OxAppMainWindow:  # type: ignore[no-redef]

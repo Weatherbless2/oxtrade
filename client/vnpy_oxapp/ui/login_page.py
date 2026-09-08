@@ -48,6 +48,7 @@ if PYSIDE_AVAILABLE:
 
         session_changed = Signal(dict)
         login_state_changed = Signal(str)
+        maximize_requested = Signal()
 
         def __init__(
             self,
@@ -118,13 +119,16 @@ if PYSIDE_AVAILABLE:
             tools = QHBoxLayout()
             tools.setSpacing(3)
             tools.addStretch(1)
-            for text, tooltip in (("▦", "二维码登录"), ("⚙", "设置"), ("—", "最小化"), ("×", "关闭")):
+            for text, tooltip in (("▦", "二维码登录"), ("⚙", "设置"), ("—", "最小化"), ("□", "最大化"), ("×", "关闭")):
                 tool = QPushButton(text)
                 tool.setObjectName("loginToolButton")
                 tool.setToolTip(tooltip)
                 tool.setFixedSize(30, 28)
                 if text == "—":
                     tool.clicked.connect(lambda: self.window().showMinimized())
+                elif text == "□":
+                    tool.clicked.connect(self.maximize_requested)
+                    self._maximize_button = tool
                 elif text == "×":
                     tool.clicked.connect(lambda: self.window().close())
                 else:
@@ -221,6 +225,13 @@ if PYSIDE_AVAILABLE:
             self._state = QLabel("未登录")
             self._state.setObjectName("loginState")
             self._state.setVisible(False)
+
+        def set_maximized(self, maximized: bool) -> None:
+            """同步登录页放大按钮，默认登录窗口仍保持小窗尺寸。"""
+            if not hasattr(self, "_maximize_button"):
+                return
+            self._maximize_button.setText("❐" if maximized else "□")
+            self._maximize_button.setToolTip("还原" if maximized else "最大化")
 
         @property
         def account_input(self) -> QLineEdit:
