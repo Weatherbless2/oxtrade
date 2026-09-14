@@ -8,6 +8,16 @@ TaskRegistration TaskCorrelationRegistry::register_request(SessionId session_id,
                                                             std::chrono::milliseconds timeout,
                                                             Clock::time_point now,
                                                             WallClock::time_point wall_now) {
+    return register_request(session_id, 0, 0, 0, timeout, now, wall_now);
+}
+
+TaskRegistration TaskCorrelationRegistry::register_request(SessionId session_id,
+                                                            TaskSequence request_id,
+                                                            std::uint32_t msg_type,
+                                                            std::uint32_t func_id,
+                                                            std::chrono::milliseconds timeout,
+                                                            Clock::time_point now,
+                                                            WallClock::time_point wall_now) {
     TaskRegistration registration;  // 默认失败结果；只有序号分配和 pending_ 插入完成后才发布 Registered。
     if (session_id == 0 || timeout <= std::chrono::milliseconds::zero()) {
         registration.status = TaskCorrelationStatus::InvalidArgument;
@@ -37,7 +47,7 @@ TaskRegistration TaskCorrelationRegistry::register_request(SessionId session_id,
     }
 
     const auto wire_deadline = static_cast<std::uint64_t>(deadline_unix_ms);  // 通过范围检查后再缩窄为稳定的无符号协议类型。
-    const PendingTask pending{session_id, now + timeout, wire_deadline};  // 主进程本地 steady deadline 与跨进程 wire deadline 来自同一次注册。
+    const PendingTask pending{session_id, now + timeout, wire_deadline, request_id, msg_type, func_id};  // 主进程本地 deadline 和网络元数据来自同一次注册。
     {
         std::lock_guard<std::mutex> lock(mutex_);  // 注册、应答回收和超时清理共享同一张表，必须把插入与查找/删除串行化。
         pending_.emplace(task_seq, pending);
@@ -46,6 +56,9 @@ TaskRegistration TaskCorrelationRegistry::register_request(SessionId session_id,
     registration.task_seq = task_seq;
     registration.session_id = session_id;
     registration.deadline_unix_ms = wire_deadline;  // 与 pending_ 使用同一 timeout 生成，调用方无需重新计算。
+    registration.request_id = request_id;
+    registration.msg_type = msg_type;
+    registration.func_id = func_id;
     return registration;
 }
 
@@ -104,6 +117,7 @@ ResponseCorrelation TaskCorrelationRegistry::resolve_response(const IpcRespMsg& 
     }
 
     correlation.session_id = found->second.session_id;
+    correlation.request_id = found->second.request_id;
     pending_.erase(found);  // 精确匹配后立即消费，确保同一 task_seq 的重复应答会被标记为 UnknownTask。
     correlation.status = TaskCorrelationStatus::Matched;
     return correlation;
@@ -115,7 +129,9 @@ std::vector<ExpiredTask> TaskCorrelationRegistry::expire(Clock::time_point now) 
     std::lock_guard<std::mutex> lock(mutex_);  // 定时清理与应答回收互斥，避免刚匹配的任务又被报告为超时。
     for (auto iterator = pending_.begin(); iterator != pending_.end();) {
         if (now >= iterator->second.deadline) {
-            expired.push_back(ExpiredTask{iterator->first, iterator->second.session_id});
+            expired.push_back(ExpiredTask{iterator->first, iterator->second.session_id,
+                                          iterator->second.request_id, iterator->second.msg_type,
+                                          iterator->second.func_id});
             iterator = pending_.erase(iterator);  // erase 返回下一个有效迭代器，保证遍历中删除不会使用失效引用。
         } else {
             ++iterator;

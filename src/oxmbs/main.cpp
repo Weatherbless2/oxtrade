@@ -2,8 +2,14 @@
 #include "oxmbs/ipc/ipc_queue_manager.h"
 #include "oxmbs/logging/run_logger.h"
 #include "oxmbs/lbm/lbm_task_dispatcher.h"
+#include "oxmbs/network/hp_socket_bridge.h"
 #include "oxmbs/network/hp_socket_server.h"
 #include "oxmbs/runtime/system_info.h"
+#include "oxmbs/routing/message_route_policy.h"
+#include "oxmbs/routing/workfunc_router.h"
+#include "oxmbs/service/qmt_service_router.h"
+#include "oxmbs/storage/postgres_pool.h"
+#include "oxmbs/storage/qmt_repository.h"
 #include "oxmbs/worker/query_worker_runtime.h"
 #include "oxmbs/worker/reply_collector.h"
 
@@ -11,11 +17,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <csignal>
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <thread>
+#include <unordered_set>
 
 namespace {
 
@@ -46,6 +54,30 @@ oxmbs::ipc::IpcQueueOptions default_ipc_queue_options() {
     options.request.permissions = 0600;
     options.reply.permissions = 0600;
     return options;
+}
+
+bool open_worker_database(void* context, std::string& error) {
+    if (context == nullptr) {
+        error = "worker PostgreSQL pool context is null";
+        return false;
+    }
+    auto* pool = static_cast<oxmbs::storage::PostgresConnectionPool*>(context);
+    oxmbs::storage::PostgresFailure failure;
+    if (!pool->open(failure)) {
+        error = oxmbs::storage::postgres_status_name(failure.status);
+        return false;
+    }
+    return true;
+}
+
+void load_database_conninfo_from_environment(oxmbs::storage::PostgresPoolOptions& options) {
+    const char* conninfo = std::getenv("OXMBS_DATABASE_URL");
+    if (conninfo == nullptr || *conninfo == '\0') {
+        conninfo = std::getenv("DATABASE_URL");
+    }
+    if (conninfo != nullptr && *conninfo != '\0') {
+        options.connection.conninfo = conninfo;  // 凭据只从运行环境注入，不进入仓库文件或日志。
+    }
 }
 
 }  // namespace
@@ -91,6 +123,19 @@ int main(int argc, char** argv) {
     logger.info("disk_total_bytes=" + std::to_string(system_info.disk_total_bytes) +
                 ", disk_available_bytes=" + std::to_string(system_info.disk_available_bytes));
 
+    oxmbs::storage::PostgresPoolOptions database_options;
+    load_database_conninfo_from_environment(database_options);
+    oxmbs::storage::PostgresConnectionPool database_pool(database_options);  // fork 前保持 closed，避免复制 libpq 连接句柄。
+    oxmbs::storage::PostgresConnectionPool database_probe(database_options);
+    oxmbs::storage::PostgresFailure database_failure;
+    if (!database_probe.open(database_failure)) {
+        logger.error("PostgreSQL preflight failed status=" +
+                     std::string(oxmbs::storage::postgres_status_name(database_failure.status)));
+        return 1;
+    }
+    database_probe.close();  // 只验证当前运行环境可连接；真正业务连接在每个 Worker fork 后独立建立。
+    logger.info("PostgreSQL preflight passed; worker connections will open after fork");
+
     oxmbs::lbm::LbmTaskDispatcher lbm_dispatcher;  // 主进程创建 Loader；fork 后 Worker 继承已校验路由但按需加载库。
     const auto funclist_result = lbm_dispatcher.load_funclist(config.funclist_path);  // 启动期先保证 XML 可用，再允许任务进入。
     if (!funclist_result) {
@@ -109,9 +154,19 @@ int main(int argc, char** argv) {
     }
 
     oxmbs::ipc::TaskCorrelationRegistry correlation_registry;
+    oxmbs::storage::QmtRepository qmt_repository(database_pool);
+    oxmbs::service::QmtRepositoryAdapter qmt_repository_adapter(qmt_repository);
+    oxmbs::service::QmtServiceRouterOptions qmt_options;
+    qmt_options.routes = {
+        {2, 1, oxmbs::service::QmtOperation::InstrumentSearch},
+        {2, 2, oxmbs::service::QmtOperation::CalendarPage},
+        {2, 3, oxmbs::service::QmtOperation::QuoteLatest},
+    };
+    oxmbs::service::QmtServiceRouter qmt_service(qmt_repository_adapter, qmt_options);
     oxmbs::worker::QueryWorkerRuntime worker_runtime(  // Worker 收到任务后才经 Dispatcher 首次触发 dlopen/dlsym。
         queue_manager.request_queue(), queue_manager.reply_queue(), {},
-        &oxmbs::lbm::LbmTaskDispatcher::handle, &lbm_dispatcher, &logger);  // 仅在 Worker 内按 XML 懒加载 LBM；主进程继续只负责 IPC、监管和回包。
+        &oxmbs::service::QmtServiceRouter::handle, &qmt_service, &logger,
+        &open_worker_database, &database_pool);  // QMT Service 在 Worker 内执行，连接池也在 fork 后独立打开。
     oxapp::process::WorkerSupervisor supervisor(
         config.query_worker_count, &oxmbs::worker::query_worker_runtime_entry, &worker_runtime);
     if (!supervisor.start()) {  // fork/启动失败时不能留下已经创建的 System V 队列。
@@ -121,8 +176,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    oxmbs::routing::WorkFuncRouter workfunc_router(
+        queue_manager, correlation_registry,
+        oxmbs::routing::MessageRoutePolicy(std::unordered_set<std::uint32_t>{2}),
+        {}, &logger);
+    oxmbs::network::HpSocketBridge network_bridge(nullptr, workfunc_router, &logger);
     oxmbs::worker::ReplyCollector reply_collector(
-        queue_manager.reply_queue(), correlation_registry, {}, nullptr, nullptr, nullptr, nullptr, &logger);
+        queue_manager.reply_queue(), correlation_registry, {},
+        &oxmbs::network::HpSocketBridge::on_response, &network_bridge,
+        &oxmbs::network::HpSocketBridge::on_timeout, &network_bridge, &logger);
     std::atomic<int> reply_collector_exit_code{-1};
     std::thread reply_thread([&reply_collector, &reply_collector_exit_code] {  // Reply 接收单独阻塞，主线程仍可巡检 Worker 和处理超时。
         reply_collector_exit_code.store(reply_collector.run(), std::memory_order_release);  // Reply 接收只在独立低频线程阻塞，不占用 WorkFunc 或主监控循环。
@@ -136,7 +198,12 @@ int main(int argc, char** argv) {
     network_options.bind_host = config.listen_host;
     network_options.port = config.listen_port;
     network_options.logger = &logger;
+    network_options.frame_sink = &oxmbs::network::HpSocketBridge::on_frame;
+    network_options.frame_sink_context = &network_bridge;
+    network_options.connection_closed_sink = &oxmbs::network::HpSocketBridge::on_connection_closed;
+    network_options.connection_closed_context = &network_bridge;
     oxmbs::network::HpSocketServer hp_socket_server(network_options);
+    network_bridge.attach_server(hp_socket_server);
     if (!hp_socket_server.start(error)) {  // 网络监听最后启动；前置 IPC/Worker 未就绪时不会接受客户端请求。
         logger.error("cannot start HP-Socket server: " + error);
         std::string stop_error;

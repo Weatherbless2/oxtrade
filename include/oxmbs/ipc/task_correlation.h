@@ -29,6 +29,9 @@ struct TaskRegistration {
     TaskSequence task_seq{0};
     SessionId session_id{0};
     std::uint64_t deadline_unix_ms{0};  // 同一次注册生成的跨进程绝对截止时间；只有 Registered 时调用方才可编码进 Task。
+    TaskSequence request_id{0};  // 网络请求标识只在主进程关联表保留，不改变跨进程 Task wire 版本。
+    std::uint32_t msg_type{0};
+    std::uint32_t func_id{0};
 
     explicit operator bool() const noexcept { return status == TaskCorrelationStatus::Registered; }
 };
@@ -37,6 +40,7 @@ struct ResponseCorrelation {
     TaskCorrelationStatus status{TaskCorrelationStatus::InvalidArgument};
     TaskSequence task_seq{0};
     SessionId session_id{0};
+    TaskSequence request_id{0};
 
     explicit operator bool() const noexcept { return status == TaskCorrelationStatus::Matched; }
 };
@@ -44,6 +48,9 @@ struct ResponseCorrelation {
 struct ExpiredTask {
     TaskSequence task_seq{0};
     SessionId session_id{0};
+    TaskSequence request_id{0};
+    std::uint32_t msg_type{0};
+    std::uint32_t func_id{0};
 };
 
 class TaskCorrelationRegistry {
@@ -55,6 +62,13 @@ public:
                                       std::chrono::milliseconds timeout,
                                       Clock::time_point now = Clock::now(),
                                       WallClock::time_point wall_now = WallClock::now());  // 用 steady_clock 保护主进程本地超时，同时生成可序列化的 wall-clock deadline 给 Worker。
+    TaskRegistration register_request(SessionId session_id,
+                                      TaskSequence request_id,
+                                      std::uint32_t msg_type,
+                                      std::uint32_t func_id,
+                                      std::chrono::milliseconds timeout,
+                                      Clock::time_point now = Clock::now(),
+                                      WallClock::time_point wall_now = WallClock::now());
     TaskCorrelationStatus cancel_request(TaskSequence task_seq,
                                          SessionId session_id,
                                          std::uint64_t deadline_unix_ms);  // 仅用于 Task 未成功投递时的回滚；三项全匹配才删除，不能误删后来复用或错误会话的任务。
@@ -69,6 +83,9 @@ private:
         SessionId session_id{0};
         Clock::time_point deadline{};  // 使用 steady_clock，避免系统时间校准改变相对超时语义。
         std::uint64_t deadline_unix_ms{0};  // 同时保留 Task wire 字段，Reply 回收时验证 Worker 没有改写截止时间。
+        TaskSequence request_id{0};
+        std::uint32_t msg_type{0};
+        std::uint32_t func_id{0};
     };
 
     std::atomic<TaskSequence> next_task_seq_{1};  // 仅主进程持有一个 registry，原子递增保证多个收包线程注册时序号不重复。

@@ -48,13 +48,17 @@ QueryWorkerRuntime::QueryWorkerRuntime(ipc::SystemVMessageQueue& request_queue,
                                        QueryWorkerRuntimeOptions options,
                                        QueryTaskHandler handler,
                                        void* handler_context,
-                                       logging::RunLogger* logger)
+                                       logging::RunLogger* logger,
+                                       QueryWorkerStartHook start_hook,
+                                       void* start_context)
     : request_queue_(request_queue),
       reply_queue_(reply_queue),
       options_(options),
       handler_(handler != nullptr ? handler : &QueryWorkerRuntime::echo_mock_handler),
       handler_context_(handler_context),
       logger_(logger),
+      start_hook_(start_hook),
+      start_context_(start_context),
       receive_buffer_(options.protocol_limits.max_frame_bytes) {
 }
 
@@ -162,6 +166,13 @@ QueryWorkerStepResult QueryWorkerRuntime::consume_one() {
 }
 
 int QueryWorkerRuntime::run() {
+    if (start_hook_ != nullptr) {
+        std::string error;
+        if (!start_hook_(start_context_, error)) {
+            log_error("query worker start hook failed: " + error);  // 子进程资源初始化失败时退出，由 Supervisor 统一判定和告警。
+            return 1;
+        }
+    }
     // 主进程在网络监听前 fork Worker；每个 Worker 只在此循环阻塞读取 Request Queue，不持有 session 或数据库连接。
     while (true) {
         const auto result = consume_one();

@@ -107,23 +107,25 @@ ReplyCollectorStepResult ReplyCollector::collect_one() {
         return result;
     }
 
+    auto response = decoded.message;
+    response.request_id = correlation.request_id;  // request_id 不进入 IPC wire，由主进程关联表在精确匹配后恢复给网络桥。
     if (response_sink_ != nullptr) {
         try {
-            response_sink_(decoded.message, response_sink_context_);  // 只有三重关联匹配后才触碰主进程的 Mock/未来 HP-Socket 回包对象。
+            response_sink_(response, response_sink_context_);  // 只有三重关联匹配后才触碰主进程的网络回包对象。
         } catch (const std::exception& exception) {
             result.status = ReplyCollectorStepStatus::ResponseSinkFailed;
             result.error = exception.what();
-            log_error("reply collector response sink failed " + response_context(decoded.message) + " error=" + exception.what());
+            log_error("reply collector response sink failed " + response_context(response) + " error=" + exception.what());
             return result;  // 关联记录已经安全消费，不能重新入队或重复回调；Collector 下一轮仍可处理其他 Reply。
         } catch (...) {
             result.status = ReplyCollectorStepStatus::ResponseSinkFailed;
             result.error = "response sink threw an unknown exception";
-            log_error("reply collector response sink failed with unknown exception " + response_context(decoded.message));
+            log_error("reply collector response sink failed with unknown exception " + response_context(response));
             return result;
         }
     }
     result.status = ReplyCollectorStepStatus::DeliveredToSink;
-    log_debug("reply collector delivered response " + response_context(decoded.message));
+    log_debug("reply collector delivered response " + response_context(response));
     return result;
 }
 

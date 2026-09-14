@@ -58,6 +58,7 @@ if(UNIX)
     target_sources(oxmbs_core PRIVATE
         src/oxmbs/network/pack_message.cpp
         src/oxmbs/network/hp_socket_server.cpp
+        src/oxmbs/network/hp_socket_bridge.cpp
         src/oxmbs/storage/postgres_pool.cpp
         src/oxmbs/storage/qmt_repository.cpp
     )

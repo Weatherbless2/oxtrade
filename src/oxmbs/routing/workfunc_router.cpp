@@ -79,6 +79,18 @@ WorkFuncRouteResult WorkFuncRouter::route(const MockPackMessage& message) {
     return forward_to_worker_process_pool(message);
 }
 
+WorkFuncRouteResult WorkFuncRouter::route(const network::PackMessage& message) {
+    const MockPackMessage view{
+        message.session_id,
+        message.message_type,
+        message.function_id,
+        message.payload.empty() ? nullptr : message.payload.data(),
+        message.payload.size(),
+        message.request_id,
+    };
+    return route(view);  // 统一复用低频白名单、深拷贝、关联登记和非阻塞入队逻辑。
+}
+
 WorkFuncRouteResult WorkFuncRouter::forward_to_worker_process_pool(const MockPackMessage& message) {
     WorkFuncRouteResult result;
     // 即使未来调用点误绕过 route()，这里仍重复执行白名单闸门，保证交易/行情等高频消息不能直接被送进 IPC。
@@ -128,7 +140,8 @@ WorkFuncRouteResult WorkFuncRouter::forward_to_worker_process_pool(const MockPac
         return result;
     }
 
-    const auto registration = correlation_registry_.register_request(message.session_id, options_.query_task_timeout);
+    const auto registration = correlation_registry_.register_request(
+        message.session_id, message.request_id, message.msg_type, message.func_id, options_.query_task_timeout);
     result.task_seq = registration.task_seq;
     result.correlation_status = registration.status;
     if (!registration) {

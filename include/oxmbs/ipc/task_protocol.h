@@ -77,6 +77,7 @@ struct IpcRespMsg {
     std::uint32_t func_id{0};  // 正常情况下原样回传请求函数标识，帮助后续 LBM 路由诊断。
     IpcResponseStatus status{IpcResponseStatus::Ok};  // Worker 执行结果，不替代主进程的本地超时状态。
     IpcPayload payload;  // 成功结果或失败详情的原始字节，长度由 wire header 中 payload_bytes 精确约束。
+    std::uint64_t request_id{0};  // 只在主进程关联表中回填，不进入 IPC wire；用于把响应还原到原始 PackMessage 请求。
 };
 
 struct IpcTaskDecodeResult {

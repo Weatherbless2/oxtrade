@@ -3,6 +3,7 @@
 #include "oxmbs/ipc/ipc_queue_manager.h"
 #include "oxmbs/ipc/task_correlation.h"
 #include "oxmbs/ipc/task_protocol.h"
+#include "oxmbs/network/pack_message.h"
 #include "oxmbs/routing/message_route_policy.h"
 #include "oxmbs/routing/mock_pack_message.h"
 
@@ -57,6 +58,7 @@ public:
 
     bool is_query_or_manage_msg(const MockPackMessage& message) const noexcept;  // 仅判断白名单，不读取或保存上游 payload。
     WorkFuncRouteResult route(const MockPackMessage& message);  // WorkFunc 调用入口：高频返回直通标识，低频才进入 ForwardToWorkerProcessPool。
+    WorkFuncRouteResult route(const network::PackMessage& message);  // HP-Socket 正式收包入口；只在适配层借用 payload，不跨异步边界保存指针。
     WorkFuncRouteResult forward_to_worker_process_pool(const MockPackMessage& message);  // 对应 Mentor 的 ForwardToWorkerProcessPool，保证不做慢 IO 或等待队列空间。
 
 private:

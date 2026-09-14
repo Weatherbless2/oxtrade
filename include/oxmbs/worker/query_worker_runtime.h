@@ -21,6 +21,7 @@ struct MockQueryExecutionResult {
 using QueryExecutionResult = MockQueryExecutionResult;  // #8 起作为通用 Worker 执行结果，保留旧类型名兼容既有 Mock 测试。
 using QueryTaskHandler = QueryExecutionResult (*)(const ipc::IpcTaskMsg& task,
                                                    void* context);  // LBM 适配器只替换实现，不改变 Worker 的协议和生命周期边界。
+using QueryWorkerStartHook = bool (*)(void* context, std::string& error);  // fork 后初始化 Worker 私有资源，避免把父进程连接句柄复制到子进程。
 
 enum class QueryWorkerStepStatus {
     ResponseSent,          // 未过期任务已执行，Response 成功写入 Reply Queue。
@@ -57,7 +58,9 @@ public:
                        QueryWorkerRuntimeOptions options = {},
                        QueryTaskHandler handler = nullptr,
                        void* handler_context = nullptr,
-                       logging::RunLogger* logger = nullptr);
+                       logging::RunLogger* logger = nullptr,
+                       QueryWorkerStartHook start_hook = nullptr,
+                       void* start_context = nullptr);
 
     QueryWorkerStepResult consume_one();  // 阻塞取一条 Request；调用者仅在 Worker 子进程中执行，主进程不调用此方法消费查询队列。
     int run();  // 持续阻塞消费；Request/Reply Queue 被主进程删除时正常返回 0，其他不可恢复 IPC 错误返回非零供 Supervisor 重启。
@@ -77,6 +80,8 @@ private:
     QueryTaskHandler handler_{nullptr};  // 空时使用 echo_mock_handler；#8 通过 LBM 适配替换，保持接收/超时/回包逻辑不变。
     void* handler_context_{nullptr};  // 可选 Mock/未来 LBM 上下文；必须可安全 fork 后读取，Worker 只借用，不释放或改变对象所有权。
     logging::RunLogger* logger_{nullptr};  // Worker 在网络线程启动前 fork，使用共享 run 日志记录消费、丢弃和失败路径。
+    QueryWorkerStartHook start_hook_{nullptr};
+    void* start_context_{nullptr};
     ipc::IpcPayload receive_buffer_;  // 每个 Worker 进程复用固定上限 buffer，避免每条低频任务都重新分配接收空间。
 };
 
