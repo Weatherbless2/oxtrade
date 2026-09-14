@@ -2,6 +2,7 @@
 #include "oxmbs/ipc/ipc_queue_manager.h"
 #include "oxmbs/logging/run_logger.h"
 #include "oxmbs/lbm/lbm_task_dispatcher.h"
+#include "oxmbs/network/hp_socket_server.h"
 #include "oxmbs/runtime/system_info.h"
 #include "oxmbs/worker/query_worker_runtime.h"
 #include "oxmbs/worker/reply_collector.h"
@@ -131,6 +132,24 @@ int main(int argc, char** argv) {
                 std::to_string(queue_manager.request_queue().id()) + " reply_queue_id=" +
                 std::to_string(queue_manager.reply_queue().id()));
 
+    oxmbs::network::HpSocketServerOptions network_options;
+    network_options.bind_host = config.listen_host;
+    network_options.port = config.listen_port;
+    network_options.logger = &logger;
+    oxmbs::network::HpSocketServer hp_socket_server(network_options);
+    if (!hp_socket_server.start(error)) {  // 网络监听最后启动；前置 IPC/Worker 未就绪时不会接受客户端请求。
+        logger.error("cannot start HP-Socket server: " + error);
+        std::string stop_error;
+        supervisor.stop(std::chrono::milliseconds{config.shutdown_timeout_ms});
+        queue_manager.close(stop_error);
+        if (reply_thread.joinable()) {
+            reply_thread.join();
+        }
+        return 1;
+    }
+    logger.info("HP-Socket server runtime started; listen=" + config.listen_host + ":" +
+                std::to_string(config.listen_port));
+
     int exit_code = 0;
     while (stop_requested == 0) {
         supervisor.monitor_once();  // #2 非阻塞巡检并按需重启异常 Worker。
@@ -144,6 +163,11 @@ int main(int argc, char** argv) {
     }
 
     logger.info("service stopping");
+    std::string network_stop_error;
+    if (!hp_socket_server.stop(network_stop_error)) {
+        logger.error("HP-Socket server stop failed: " + network_stop_error);
+        exit_code = 1;
+    }
     if (!supervisor.stop(std::chrono::milliseconds{config.shutdown_timeout_ms})) {
         logger.error("one or more query workers did not stop cleanly");
         exit_code = 1;

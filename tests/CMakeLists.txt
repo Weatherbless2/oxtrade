@@ -119,6 +119,14 @@ target_link_libraries(oxmbs_market_broadcaster_test PRIVATE oxmbs_core oxmwh_cor
 
 add_test(NAME oxmbs_market_broadcaster_test COMMAND oxmbs_market_broadcaster_test)
 
+if(UNIX)
+    add_executable(oxmbs_hp_socket_server_test
+        test_hp_socket_server.cpp
+    )
+    target_link_libraries(oxmbs_hp_socket_server_test PRIVATE oxmbs_core)
+    add_test(NAME oxmbs_hp_socket_server_test COMMAND oxmbs_hp_socket_server_test)
+endif()
+
 add_executable(oxmwh_wire_pipeline_test
     test_oxmwh_wire_pipeline.cpp
 )
