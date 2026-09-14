@@ -21,6 +21,7 @@ class ConnectionState(str, Enum):
 
 
 ResponseCallback = Callable[[ClientResponse], None]
+PushCallback = Callable[[ClientResponse], None]
 StateCallback = Callable[[ConnectionState, str], None]
 ErrorCallback = Callable[[ErrorCode, str], None]
 
@@ -44,6 +45,10 @@ class IClientTransport(ABC):
     @abstractmethod
     def set_error_callback(self, callback: ErrorCallback) -> None:
         """设置传输层不可关联错误的回调，例如尚无 request_id 的连接失败。"""
+
+    def set_push_callback(self, callback: PushCallback) -> None:
+        """设置异步 Push 回调；旧 Mock 实现可忽略，正式 Transport 必须交付。"""
+        del callback
 
     @abstractmethod
     def connect(self) -> bool:

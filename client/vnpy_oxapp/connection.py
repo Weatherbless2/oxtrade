@@ -11,7 +11,7 @@ from uuid import uuid4
 import time
 
 from .message import ClientRequest, ClientResponse, ErrorCode, MessageStatus, unix_time_ms
-from .transport import ConnectionState, IClientTransport
+from .transport import ConnectionState, IClientTransport, PushCallback
 
 
 class RequestResolution(str, Enum):
@@ -112,14 +112,20 @@ class ClientProtocolClient:
         self.transport = transport
         self.tracker = tracker or RequestTracker()
         self._response_callback: Callable[[ClientResponse], None] | None = None
+        self._push_callback: PushCallback | None = None
         self._state_callback: Callable[[ConnectionState, str], None] | None = None
         self._future_lock = RLock()
         self._futures: dict[str, Future[ClientResponse]] = {}
         transport.set_response_callback(self._on_transport_response)  # Transport 只交付数据，关联判断集中在本类。
+        transport.set_push_callback(self._on_transport_push)  # Push 不进入 RequestTracker，单独交给行情/状态页面。
         transport.set_state_callback(self._on_transport_state)  # 连接状态沿同一回调链交给页面/Gateway。
 
     def set_response_callback(self, callback: Callable[[ClientResponse], None]) -> None:
         self._response_callback = callback
+
+    def set_push_callback(self, callback: PushCallback) -> None:
+        """设置行情/状态 Push 回调；普通请求仍由 response_callback 处理。"""
+        self._push_callback = callback
 
     def set_state_callback(self, callback: Callable[[ConnectionState, str], None]) -> None:
         self._state_callback = callback
@@ -171,6 +177,10 @@ class ClientProtocolClient:
 
     def _on_transport_response(self, response: ClientResponse) -> None:
         self._deliver_if_current(response)
+
+    def _on_transport_push(self, response: ClientResponse) -> None:
+        if self._push_callback:
+            self._push_callback(response)  # Push 没有 request_id 关联，不得送进 tracker 误判为未知响应。
 
     def _deliver_if_current(self, response: ClientResponse) -> None:
         resolution = self.tracker.resolve(response)  # 同时检查 request_id、session_id 和 deadline。
