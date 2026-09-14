@@ -63,6 +63,12 @@ target_link_libraries(oxmbs_query_worker_runtime_test PRIVATE oxmbs_core oxapp_c
 add_test(NAME oxmbs_query_worker_runtime_test COMMAND oxmbs_query_worker_runtime_test)
 
 if(UNIX)
+    add_executable(oxmbs_postgresql_repository_test
+        test_postgresql_repository.cpp
+    )
+    target_link_libraries(oxmbs_postgresql_repository_test PRIVATE oxmbs_core)
+    add_test(NAME oxmbs_postgresql_repository_test COMMAND oxmbs_postgresql_repository_test)
+
     add_library(oxmbs_lbm_test_module SHARED
         lbm_test_module.cpp
     )

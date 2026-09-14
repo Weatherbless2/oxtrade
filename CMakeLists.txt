@@ -39,6 +39,7 @@ add_library(oxmbs_core
 
 if(UNIX)
     # HP-Socket 不作为“系统已安装包”猜测，必须由构建调用方明确给出已核验的版本根目录。
+    find_package(PostgreSQL REQUIRED)
     set(HPSOCKET_ROOT "/root/projects/quantfabric-study/QuantFabric/XAPI/HP-Socket/5.8.2"
         CACHE PATH "HP-Socket 5.8.2 root directory")
     if(NOT EXISTS "${HPSOCKET_ROOT}/include/HPSocket4C.h" OR
@@ -56,8 +57,10 @@ if(UNIX)
     target_sources(oxmbs_core PRIVATE
         src/oxmbs/network/pack_message.cpp
         src/oxmbs/network/hp_socket_server.cpp
+        src/oxmbs/storage/postgres_pool.cpp
+        src/oxmbs/storage/qmt_repository.cpp
     )
-    target_link_libraries(oxmbs_core PUBLIC hpsocket4c)
+    target_link_libraries(oxmbs_core PUBLIC hpsocket4c PostgreSQL::PostgreSQL)
     set_property(TARGET oxmbs_core APPEND PROPERTY
         BUILD_RPATH "${HPSOCKET_ROOT}/lib")
 endif()
