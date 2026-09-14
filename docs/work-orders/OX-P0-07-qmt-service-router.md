@@ -120,4 +120,4 @@ ctest --test-dir build --output-on-failure -R oxmbs_qmt_service_router_test
 
 - 分支：`feature/30-oxmbs-qmt-services-router`
 - 基线：`b2616d7`（`OX-P0-06`）
-- 本阶段提交：完成验收后记录在此处；未推送远程。
+- 本阶段提交：`62179dd`；未推送远程。
