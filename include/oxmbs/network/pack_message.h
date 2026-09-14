@@ -35,6 +35,8 @@ enum class PackMessageErrorCode : std::uint32_t {
     InvalidArgument = 2001,
     EmptyResult = 2002,
     FunctionNotAvailable = 2003,
+    PgUnavailable = 2101,
+    PgTimeout = 2102,
     InternalError = 9001,
 };
 

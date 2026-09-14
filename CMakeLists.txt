@@ -35,6 +35,7 @@ add_library(oxmbs_core
     src/oxmbs/mock/mock_backend_protocol.cpp
     src/oxmbs/market/market_wire_broadcaster.cpp
     src/oxmbs/auth/auth_service.cpp
+    src/oxmbs/service/qmt_service_router.cpp
 )
 
 if(UNIX)

@@ -69,6 +69,14 @@ if(UNIX)
     target_link_libraries(oxmbs_postgresql_repository_test PRIVATE oxmbs_core)
     add_test(NAME oxmbs_postgresql_repository_test COMMAND oxmbs_postgresql_repository_test)
 
+    add_executable(oxmbs_qmt_service_router_test
+        test_qmt_service_router.cpp
+    )
+
+    target_link_libraries(oxmbs_qmt_service_router_test PRIVATE oxmbs_core)
+
+    add_test(NAME oxmbs_qmt_service_router_test COMMAND oxmbs_qmt_service_router_test)
+
     add_library(oxmbs_lbm_test_module SHARED
         lbm_test_module.cpp
     )
