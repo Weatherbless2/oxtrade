@@ -1,8 +1,9 @@
-"""Mock-first oxApp 客户端启动入口。
+"""oxApp 客户端启动入口。
 
 启动顺序固定为：创建日志和 QApplication → 应用主题 → 建立 Qt Bridge
 与客户端 Transport → 启动行情 Hub → 构造主窗口 → 进入 Qt 事件循环。
-退出时按相反顺序停止行情、断开 Transport 并关闭日志，确保后台线程
+运行模式默认是 Mock；显式启用 ``hpsocket`` 时，业务页面通过正式
+PackMessage/HP-Socket 读取 oxMBS 数据。退出时按相反顺序停止行情、断开 Transport 并关闭日志，确保后台线程
 不会在 QWidget 销毁后继续回调。
 """
 
@@ -13,7 +14,7 @@ import sys
 from .connection import ClientProtocolClient
 from .logging import create_startup_logger
 from .market import MarketHub, create_market_feed, load_market_config
-from .mock.mock_backend_transport import MockBackendTransport
+from .runtime_config import create_client_transport, load_client_runtime_config
 from .ui.main_window import OxAppMainWindow
 from .ui.qt_bridge import AsyncQtBridge
 from .ui.theme import apply_workbench_theme
@@ -36,21 +37,35 @@ def main() -> int:
         app = QApplication(sys.argv)  # 创建 Qt 主线程事件循环，所有 QWidget 必须归它管理。
         apply_workbench_theme(app)  # 正式入口和测试构造窗口共用同一套 vn.py 风格工作台主题。
         bridge = AsyncQtBridge()  # 建立后台 Transport 到 GUI 主线程的信号边界。
-        # 当前默认使用 C++ Mock 后端，既能演示完整页面，又不会误连生产服务。
-        client = ClientProtocolClient(MockBackendTransport())  # #24 默认走本地 C++ Mock 后端，验证 #1-#8；仍不连接真实 HP-Socket、数据库或柜台。
+        runtime_config = load_client_runtime_config()  # 运行模式由配置/环境决定，页面不自行选择数据源。
+        transport = create_client_transport(runtime_config)
+        client = ClientProtocolClient(transport)
+        logger.info(
+            f"client_transport kind={runtime_config.transport_kind} "
+            f"endpoint={runtime_config.host}:{runtime_config.port}",
+            module="oxApp",
+        )
         client.set_response_callback(bridge.publish_response)  # 响应先进入 Qt queued signal，再由页面消费。
         client.set_state_callback(lambda state, reason: bridge.publish_state(state.value, reason))  # 状态同样禁止后台线程直接碰控件。
         client.connect()  # 连接状态通过 bridge 更新状态栏。
-        # 行情 Hub 与普通请求 Transport 分离，避免高频行情阻塞管理页面请求。
-        market_config = load_market_config()
-        market_hub = MarketHub(  # 行情是独立的高频开发链路，绝不进入 MockBackendTransport/System V Query Worker。
-            create_market_feed(market_config),
-            tick_capacity=market_config.tick_buffer_size,
-            bar_capacity=market_config.bar_buffer_size,
-            ui_refresh_ms=market_config.ui_refresh_ms,
-        )
-        market_hub.start()  # 先启动缓存与数据源，再构建页面；首批行情即使先到也会保存在 Hub 中。
-        window = OxAppMainWindow(bridge, client=client, logger=logger, market_hub=market_hub)  # 构造公共导航和页面插槽，并记录控件加载耗时。
+        market_hub = None
+        if runtime_config.transport_kind == "mock":
+            # Mock 模式保留原有开发行情 Hub；正式 Socket 模式直接由 MarketService 请求 QMT/PG。
+            market_config = load_market_config()
+            market_hub = MarketHub(
+                create_market_feed(market_config),
+                tick_capacity=market_config.tick_buffer_size,
+                bar_capacity=market_config.bar_buffer_size,
+                ui_refresh_ms=market_config.ui_refresh_ms,
+            )
+            market_hub.start()  # 先启动缓存与数据源，再构建页面；首批行情即使先到也会保存在 Hub 中。
+        window = OxAppMainWindow(
+            bridge,
+            client=client,
+            logger=logger,
+            market_hub=market_hub,
+            session_id=runtime_config.session_id,
+        )  # 构造公共导航和页面插槽，并记录控件加载耗时。
         window.show()  # 将窗口交给 Qt 事件循环显示。
         logger.info("client_ready", module="oxApp")
         return app.exec()  # 阻塞在 GUI 事件循环，退出码由 Qt 返回给操作系统。

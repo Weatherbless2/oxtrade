@@ -77,8 +77,24 @@ ctest --test-dir build --output-on-failure
 PYTHONPATH=client python3 -m vnpy_oxapp.app
 ```
 
+## OX-P0-04 增量：正式 Transport 与 QMT/PG 查询
+
+正式 `HpSocketTransport` 和 `PackMessageCodec` 已加入客户端，并通过运行配置显式启用：
+
+```text
+Qt Service -> ClientProtocolClient -> HpSocketTransport
+-> C++ HP-Socket -> WorkFuncRouter -> Query Worker
+-> QmtServiceRouter -> QmtRepository -> ta_data PostgreSQL
+-> ReplyCollector -> HP-Socket -> ClientResponse -> Qt
+```
+
+`client/vnpy_oxapp/runtime_config.py` 负责 `mock/hpsocket` 工厂和环境变量覆盖；
+`MarketService.list_quotes()` 在正式模式调用 `quote.latest`，原样保留 `source=QMT/PG`、
+`quote_time` 和 `receive_time`。当前 Qt 页面正式模式只显示最新快照；没有历史 Tick/K 线/五档表时显示明确边界，禁止回退 Mock。
+
+本增量已用真实 C++ 服务和 `ta_data` 返回 `1:688693` 的 QMT 行情；认证登录仍待 `OX-P0-05`，实时订阅 Push 仍待 `OX-P1-01`。
+
 ## 后续替换点
 
-新增 `HpSocketTransport(IClientTransport)` 和正式 `PackMessageCodec` 后，保留
-`ClientProtocolClient`、服务接口、请求关联和 Qt 页面层不变；MockTransport 继续作为 UI 状态和
-回归测试的故障注入实现。
+继续实现登录/权限和实时 Push 时，保留 `ClientProtocolClient`、服务接口、请求关联和 Qt 页面层不变；
+`MockTransport` 继续作为 UI 状态和回归测试的故障注入实现，不能冒充生产行情。

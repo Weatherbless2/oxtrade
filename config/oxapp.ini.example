@@ -7,6 +7,16 @@ log_level=INFO
 host=127.0.0.1
 port=18080
 
+[transport]
+# mock: 本地开发默认值；hpsocket: 连接 C++ oxMBS 正式 PackMessage 服务。
+kind=mock
+hpsocket_host=127.0.0.1
+hpsocket_port=18080
+session_id=mock-session
+connect_timeout_seconds=3
+read_timeout_seconds=0.5
+reconnect_enabled=true
+
 [log]
 directory=logs
 

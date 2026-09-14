@@ -4,6 +4,8 @@ from concurrent.futures import Future
 import unittest
 
 from vnpy_oxapp.market.hub import MarketHub
+from vnpy_oxapp.hpsocket_transport import HpSocketTransport
+from vnpy_oxapp.message import MessageStatus
 from vnpy_oxapp.services.market_service import MarketService
 from tests.python.test_market_hub import ManualFeed, event
 
@@ -11,6 +13,7 @@ from tests.python.test_market_hub import ManualFeed, event
 class FallbackClient:
     def __init__(self) -> None:
         self.calls: list[dict] = []
+        self.transport = object()
 
     def request(self, **kwargs):
         self.calls.append(kwargs)
@@ -47,3 +50,24 @@ class MarketServiceTest(unittest.TestCase):
         future = service.list_ticks(query="IF2609.CFX", page=1, page_size=20)  # 股票 Hub 已有数据但故意查询期货，验证不同产品源不会互相遮蔽。
         self.assertEqual("fallback-request", future.request_id)
         self.assertEqual("ticks", client.calls[0]["func_id"])
+
+    def test_formal_transport_routes_quote_latest_to_qmt_protocol(self) -> None:
+        client = FallbackClient()
+        client.transport = HpSocketTransport()
+        service = MarketService(client)
+        future = service.list_quotes(query="688693.SH")
+        self.assertEqual("quote", client.calls[0]["msg_type"])
+        self.assertEqual("latest", client.calls[0]["func_id"])
+        self.assertEqual("1", client.calls[0]["payload"]["data"]["market"])
+        self.assertEqual("688693", client.calls[0]["payload"]["data"]["stkcode"])
+        self.assertEqual(1, client.calls[0]["payload"]["schema_version"])
+        del future
+
+    def test_formal_transport_does_not_fallback_to_mock_for_unavailable_tables(self) -> None:
+        client = FallbackClient()
+        client.transport = HpSocketTransport()
+        service = MarketService(client)
+        response = service.list_ticks(query="688693.SH").result()
+        self.assertIs(MessageStatus.FAILED, response.status)
+        self.assertIn("没有历史 Tick 表", response.error_message)
+        self.assertEqual([], client.calls)

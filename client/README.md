@@ -1,8 +1,8 @@
 # oxApp Python 客户端（工单 #16/#17/#14）
 
 本目录是对 `vn.py` Qt 客户端的业务化扩展，不复制或修改上游 `vn.py` 源码。
-当前实现通信抽象、确定性 Mock 服务、请求关联、公共 Qt 页面容器、客户端日志和控件加载耗时统计；它**没有**连接真实
-HP-Socket、`PackMessage`、oxMBS、数据库、柜台或交易系统。
+当前实现通信抽象、确定性 Mock 服务、正式 `HpSocketTransport`、`PackMessage` 编解码、请求关联、公共 Qt 页面容器、
+客户端日志和控件加载耗时。默认启动仍为 Mock；显式启用 `hpsocket` 后，行情查询可以经过 oxMBS 读取 PostgreSQL `ta_data`。
 
 ## 安装和运行
 
@@ -18,7 +18,8 @@ PYTHONPATH=client python -m vnpy_oxapp.app
 ```
 
 开发/验收时可使用 `QT_QPA_PLATFORM=offscreen` 运行无窗口 Qt 测试；有 WSLg/X11 时直接启动即可看到桌面窗口。
-客户端启动默认进入登录欢迎页，使用 Mock 用户（例如 `yangjh` / `mock-password`）登录后进入工作台。
+客户端启动默认进入登录欢迎页，使用 Mock 用户（例如 `yangjh` / `mock-password`）登录后进入 Mock 工作台。
+正式 `hpsocket` 模式的连接和 `quote.latest` 查询已完成，真实登录/权限仍由 `OX-P0-05` 接入。
 
 没有安装 PySide6 或 vn.py 时，消息、Mock 服务和请求关联的纯 Python 测试仍可运行；启动 Qt
 客户端会给出明确的依赖提示。
@@ -29,6 +30,9 @@ PYTHONPATH=client python -m vnpy_oxapp.app
 vnpy_oxapp/
   message.py       临时适配消息模型，不等于真实 PackMessage
   codec.py         JSON 编解码，方便 Mock 和测试追踪
+  pack_message.py  正式 OXPK PackMessage 编解码
+  hpsocket_transport.py  Python/Qt 正式 HP-Socket TCP Transport
+  runtime_config.py  Mock/正式 Transport 运行模式工厂
   connection.py    request_id/session_id 关联与超时保护
   transport.py     传输接口和状态模型
   mock/            可控延迟、错误、断线、权限等 Mock 实现
@@ -56,7 +60,17 @@ from vnpy_oxapp.ui.theme import apply_workbench_theme
 apply_workbench_theme(app, "light")  # 或 "dark_navy"
 ```
 
-后续真实后台接入时，只需要新增 `HpSocketTransport` 和正式协议 Codec，并保持页面和服务接口不变。
+正式后台模式通过运行配置切换，不需要页面直接接触 Socket：
+
+```bash
+export OXAPP_TRANSPORT=hpsocket
+export OXAPP_HPSOCKET_HOST=127.0.0.1
+export OXAPP_HPSOCKET_PORT=18080
+export OXAPP_SESSION_ID=desktop-readonly
+PYTHONPATH=client python -m vnpy_oxapp.app
+```
+
+该模式不会把数据库密码写入客户端；Qt 页面只通过 Service 请求 `quote.latest`，返回中的 `source=QMT/PG` 可用于验收真实来源。
 
 ## 开发版行情接入（#14）
 
@@ -69,7 +83,8 @@ apply_workbench_theme(app, "light")  # 或 "dark_navy"
 little-endian 字段、半包/粘包、订阅过滤和源序号保护。它通过 `feed_bytes()` 接收外部传输层交付的字节，
 不会自行创建 HP-Socket，也不会启动另一个行情项目。
 
-这不是生产低时延行情实现：客户端默认不接正式券商/HP-Socket/柜台。正式行情源通过同仓库 `oxMWH`
+这不是生产低时延行情 Push 实现：客户端的正式 `quote.latest` 查询已经可以连接 oxMBS/QMT/PG，
+但实时行情源仍通过同仓库 `oxMWH`
 的 `IMarketSource` 接入，正式发布协议通过 `IMarketPublisher` 接入，不应把开发 Mock 作为真实下单或风控依据。
 配置和详细边界见 [行情路由说明](../docs/architecture/market-routing.md)。
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..connection import ClientProtocolClient
+from ..hpsocket_transport import HpSocketTransport
 from ..logging import ClientLogger
 from ..market.hub import MarketHub
 from ..message import ClientResponse
@@ -31,6 +32,7 @@ if PYSIDE_AVAILABLE:
             self.bridge = bridge
             self.logger = logger
             self.market_hub = market_hub
+            self._formal_qmt = isinstance(client.transport, HpSocketTransport)  # 正式模式的表格只显示 QMT/PG 回包，不混入开发行情源。
             self.service = MarketService(client, session, market_hub)
             self._pending: set[str] = set()
             self._hub_unsubscribers: list[Any] = []
@@ -38,11 +40,14 @@ if PYSIDE_AVAILABLE:
             self._refresh_timer.setSingleShot(True)
             self._refresh_timer.timeout.connect(self._refresh_from_market)  # 高频事件先合并，单个 Tick 不应逐条触发表格重绘。
             self._symbols = QComboBox()
-            for symbol, name in (
-                ("000001.SZ", "平安银行"), ("600000.SH", "浦发银行"), ("600519.SH", "贵州茅台"),
-                ("000300.SZ", "沪深300"), ("510300.SH", "300ETF"), ("IF2609.CFX", "IF2609"),
-                ("IC2609.CFX", "IC2609"), ("159915.SZ", "创业板ETF"),
-            ):
+            symbols = (
+                (("688693.SH", "锴威特"), ("110075.SH", "南航转债"))
+                if self._formal_qmt else
+                (("000001.SZ", "平安银行"), ("600000.SH", "浦发银行"), ("600519.SH", "贵州茅台"),
+                 ("000300.SZ", "沪深300"), ("510300.SH", "300ETF"), ("IF2609.CFX", "IF2609"),
+                 ("IC2609.CFX", "IC2609"), ("159915.SZ", "创业板ETF"))
+            )
+            for symbol, name in symbols:
                 self._symbols.addItem(f"{symbol}  {name}", symbol)
             subscribe = QPushButton("订阅行情")
             subscribe.clicked.connect(self._subscribe)
@@ -61,6 +66,10 @@ if PYSIDE_AVAILABLE:
             specs = (
                 TableSpec(
                     "行情列表",
+                    (("instrument_id", "标的"), ("name", "名称"), ("market", "市场"), ("last_price", "最新"),
+                     ("pre_close", "昨收"), ("volume", "成交量"), ("amount", "成交额"),
+                     ("quote_time", "行情时间"), ("receive_time", "入库时间"), ("source", "来源"))
+                    if self._formal_qmt else
                     (("symbol", "代码"), ("name", "名称"), ("market", "市场"), ("last", "最新"),
                      ("change_percent", "涨跌幅"), ("volume", "成交量"), ("amount", "成交额"), ("update_time", "更新时间")),
                     lambda filters: self.service.list_quotes(**filters),
@@ -112,7 +121,8 @@ if PYSIDE_AVAILABLE:
 
         def _set_symbol_filter(self) -> None:
             symbol = str(self._symbols.currentData() or "")
-            for index in (1, 2, 3):
+            indices = (0, 1, 2, 3) if self._formal_qmt else (1, 2, 3)
+            for index in indices:
                 self._tables._panels[index][1].set_query_text(symbol)  # Tick/K线/盘口按当前标的请求，行情总表仍保留全市场扫描视图。
 
         def _refresh_selected_symbol(self) -> None:

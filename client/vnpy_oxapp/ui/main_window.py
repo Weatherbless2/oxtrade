@@ -140,6 +140,7 @@ if PYSIDE_AVAILABLE:
             parent: QWidget | None = None,
             logger: ClientLogger | None = None,
             market_hub: MarketHub | None = None,
+            session_id: str = "mock-session",
         ) -> None:
             """初始化窗口、布局、页面、信号，并读取已有 Transport 状态。"""
             super().__init__(parent)
@@ -149,7 +150,7 @@ if PYSIDE_AVAILABLE:
             self.logger = logger or ClientLogger()
             self.client = client
             self.market_hub = market_hub
-            self.session = ClientSession()
+            self.session = ClientSession(session_id=session_id)  # 正式 Transport 可注入部署会话；认证状态仍由登录服务决定。
             self.state = ShellState()
             self.load_timings: list[LoadTiming] = []
             self.bridge = bridge
