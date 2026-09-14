@@ -11,6 +11,7 @@
 #include <limits>
 #include <mutex>
 #include <new>
+#include <chrono>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -53,6 +54,12 @@ const char* hp_error_desc(HP_Server server) noexcept {
 
 std::string connection_text(ConnectionId connection_id) {
     return "connection_id=" + std::to_string(connection_id);
+}
+
+std::uint64_t unix_now_ms() noexcept {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count());
 }
 
 }  // namespace
@@ -100,19 +107,21 @@ struct HpSocketServer::Impl {
         return iterator == connections.end() ? nullptr : iterator->second;
     }
 
-    void remove_connection(ConnectionId connection_id) {
+    std::uint64_t remove_connection(ConnectionId connection_id) {
         std::lock_guard lock(mutex);
         const auto iterator = connections.find(connection_id);
         if (iterator == connections.end()) {
-            return;
+            return 0;
         }
         const auto context = iterator->second;
         std::lock_guard context_lock(context->mutex);
         context->closing = true;
+        const auto session_id = context->session_id;
         if (context->session_id != 0) {
             sessions.erase(context->session_id);
         }
         connections.erase(iterator);
+        return session_id;
     }
 
     void idle_loop() {
@@ -615,7 +624,7 @@ int HpSocketServer::handle_receive(ConnectionId connection_id,
             heartbeat.request_id = message.request_id;
             heartbeat.session_id = message.session_id;
             heartbeat.sequence = message.sequence;
-            heartbeat.timestamp_ms = message.timestamp_ms;
+            heartbeat.timestamp_ms = unix_now_ms();  // 回包时间由 Server 生成，不能信任或复用客户端时间。
             heartbeat.payload = message.payload;
             std::string send_error;
             if (!send(connection_id, heartbeat, send_error)) {
@@ -648,7 +657,19 @@ int HpSocketServer::handle_receive(ConnectionId connection_id,
 int HpSocketServer::handle_close(ConnectionId connection_id,
                                  int operation,
                                  int error_code) {
-    impl_->remove_connection(connection_id);
+    const auto session_id = impl_->remove_connection(connection_id);
+    if (impl_->options.connection_closed_sink != nullptr) {
+        try {
+            impl_->options.connection_closed_sink(connection_id, session_id,
+                                                  impl_->options.connection_closed_context);
+        } catch (const std::exception& exception) {
+            impl_->log_warning("connection closed sink failed " + connection_text(connection_id) +
+                               " error=" + exception.what());
+        } catch (...) {
+            impl_->log_warning("connection closed sink failed with unknown exception " +
+                               connection_text(connection_id));
+        }
+    }
     impl_->log_info("closed " + connection_text(connection_id) +
                     " operation=" + std::to_string(operation) +
                     " error_code=" + std::to_string(error_code));

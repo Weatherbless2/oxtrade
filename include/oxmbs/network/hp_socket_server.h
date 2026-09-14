@@ -18,6 +18,9 @@ using ConnectionId = std::uint64_t;
 using PackFrameSink = void (*)(ConnectionId connection_id,
                                const PackMessage& message,
                                void* context);
+using ConnectionClosedSink = void (*)(ConnectionId connection_id,
+                                      std::uint64_t session_id,
+                                      void* context);
 
 struct HpSocketServerOptions {
     std::string bind_host{"127.0.0.1"};
@@ -32,6 +35,8 @@ struct HpSocketServerOptions {
     std::size_t max_send_queue_bytes{8U * 1024U * 1024U};
     PackFrameSink frame_sink{nullptr};
     void* frame_sink_context{nullptr};
+    ConnectionClosedSink connection_closed_sink{nullptr};
+    void* connection_closed_context{nullptr};
     logging::RunLogger* logger{nullptr};
 };
 
