@@ -34,6 +34,7 @@ add_library(oxmbs_core
     src/oxmbs/lbm/lbm_task_dispatcher.cpp
     src/oxmbs/mock/mock_backend_protocol.cpp
     src/oxmbs/market/market_wire_broadcaster.cpp
+    src/oxmbs/auth/auth_service.cpp
 )
 
 if(UNIX)

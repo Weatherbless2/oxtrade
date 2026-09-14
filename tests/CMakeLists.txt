@@ -14,6 +14,14 @@ target_link_libraries(oxmbs_config_logging_test PRIVATE oxmbs_core)
 
 add_test(NAME oxmbs_config_logging_test COMMAND oxmbs_config_logging_test)
 
+add_executable(oxmbs_auth_service_test
+    test_auth_service.cpp
+)
+
+target_link_libraries(oxmbs_auth_service_test PRIVATE oxmbs_core)
+
+add_test(NAME oxmbs_auth_service_test COMMAND oxmbs_auth_service_test)
+
 add_executable(oxapp_worker_supervisor_test
     test_worker_supervisor.cpp
 )
