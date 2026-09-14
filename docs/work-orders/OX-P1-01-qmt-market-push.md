@@ -1,5 +1,7 @@
 # OX-P1-01 实时行情订阅与 HP-Socket 广播
 
+> 执行状态：`PLANNED`。本文件受 [生产实施路线图](OX-production-roadmap.md) 统一约束；实际开始前必须先完成 `OX-P0-05A`、`OX-P0-09`、`OX-P0-10`、`OX-P0-11` 和 `OX-P0-12`。当前 `feature/32-oxmbs-qmt-market-push` 仅保存早期设计文档，不是可直接继续开发的生产基线。
+
 ## 工单目标
 
 把已验证的 QMT 实时行情源接入 oxMBS 的在线行情通道：客户端按 Session 订阅标的，服务端合并并管理订阅，行情经过标准化和序列号保护后以 `PackMessageKind::Push` 广播到对应客户端。行情链路保持高频隔离，不进入 System V Request/Reply Queue、Query Worker、LBM 或 PostgreSQL 慢查询路径。
@@ -10,6 +12,8 @@
 - `OX-P0-04`：Python/Qt `HpSocketTransport`，已支持 `Push` 解码和页面回调。
 - `OX-P0-07`：QMT 查询/业务路由基础，提供 QMT 数据字段语义；本工单的实时源适配仍独立于低频查询。
 - `OX-P0-08`：ReplyCollector 真实回包桥接，保证低频回包与行情 Push 不共用队列。
+- `OX-P0-05A`：真实认证与会话授权，确保订阅只能绑定到已认证 Session。
+- `OX-P0-12`：全量 QMT/PG 行情工作台，冻结客户端真实行情字段和认证状态展示。
 
 ## 当前工单范围图
 
@@ -123,6 +127,6 @@ sequenceDiagram
 
 ## 预期提交
 
-分支：`feature/32-oxmbs-qmt-market-push`
+实施分支：在本工单实际开始时，从已验收的 `OX-P0-12` 基线创建；建议名称为 `feature/39-oxmbs-qmt-market-push`。不提前创建空功能分支。
 
 阶段完成后另附简洁说明，列出技术、线程/进程边界、架构图、代码位置、验收结果和面试讲解。

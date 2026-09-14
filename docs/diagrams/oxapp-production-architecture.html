@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>oxApp 生产双通道架构图</title>
+  <style>
+    :root { --paper:#f5f5f5; --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399; --rule:rgba(45,49,66,.12); --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08); --link:#2e5aa8; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-family:Geist,"Noto Sans SC","Microsoft YaHei",sans-serif; }
+    main { max-width:1280px; margin:0 auto; padding:32px 32px 24px; }
+    .eyebrow { margin:0 0 8px; color:var(--soft); font:500 12px/1.2 "Geist Mono","Noto Sans Mono CJK SC",monospace; letter-spacing:.08em; }
+    h1 { margin:0; font:400 36px/1.1 Georgia,"Noto Serif SC",serif; letter-spacing:0; }
+    .subtitle { max-width:900px; margin:12px 0 24px; color:var(--muted); font-size:16px; line-height:1.6; }
+    figure { margin:0; }
+    svg { width:100%; height:auto; display:block; }
+    figcaption { margin-top:12px; color:var(--muted); font-size:14px; line-height:1.6; }
+    .footer { margin-top:20px; padding-top:16px; border-top:1px solid var(--rule); color:var(--soft); font:12px/1.5 "Geist Mono","Noto Sans Mono CJK SC",monospace; }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">OXAPP / OXMBS / QMT · 生产架构</p>
+  <h1>两条通道，各做各的事</h1>
+  <p class="subtitle">低频查询追求可控、可鉴权和可追踪；实时行情追求及时、有界和不互相拖慢。两条通道共用客户端与网络协议，但不共用 Worker、LBM 或数据库查询路径。</p>
+  <figure>
+    <svg viewBox="0 0 1280 720" role="img" aria-labelledby="oxapp-production-architecture-title oxapp-production-architecture-desc">
+      <title id="oxapp-production-architecture-title">oxApp 生产双通道架构图</title>
+      <desc id="oxapp-production-architecture-desc">图中上方是从 QMT 实时回调到 Qt 页面的高频行情通道，下方是从 Qt 查询到 PostgreSQL 再返回页面的低频查询通道，二者明确隔离。</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="#4f5d75"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="#2e5aa8"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="1280" height="720" fill="#f5f5f5"/>
+      <rect x="32" y="56" width="1056" height="208" rx="8" fill="rgba(45,49,66,.02)" stroke="rgba(45,49,66,.12)"/>
+      <rect x="32" y="328" width="1056" height="208" rx="8" fill="rgba(45,49,66,.02)" stroke="rgba(45,49,66,.12)"/>
+      <rect x="48" y="64" width="152" height="20" rx="4" fill="#f5f5f5"/>
+      <text x="48" y="80" fill="#4f5d75" font-size="12" font-family="Geist, 'Noto Sans SC', sans-serif" letter-spacing="1">高频实时行情</text>
+      <rect x="48" y="336" width="176" height="20" rx="4" fill="#f5f5f5"/>
+      <text x="48" y="352" fill="#4f5d75" font-size="12" font-family="Geist, 'Noto Sans SC', sans-serif" letter-spacing="1">低频登录、查询与管理</text>
+
+      <line x1="240" y1="164" x2="312" y2="164" stroke="#2e5aa8" stroke-width="2" marker-end="url(#arrow-link)"/>
+      <line x1="512" y1="164" x2="584" y2="164" stroke="#2e5aa8" stroke-width="2" marker-end="url(#arrow-link)"/>
+      <line x1="784" y1="164" x2="856" y2="164" stroke="#2e5aa8" stroke-width="2" marker-end="url(#arrow-link)"/>
+      <line x1="240" y1="436" x2="312" y2="436" stroke="#4f5d75" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="512" y1="436" x2="584" y2="436" stroke="#4f5d75" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="784" y1="436" x2="856" y2="436" stroke="#4f5d75" stroke-width="2" marker-end="url(#arrow)"/>
+
+      <g>
+        <rect x="48" y="124" width="192" height="80" rx="6" fill="#ffffff" stroke="#2d3142"/>
+        <text x="144" y="156" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">QMT 实时回调</text>
+        <text x="144" y="180" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">报价事件</text>
+      </g>
+      <g>
+        <rect x="320" y="124" width="192" height="80" rx="6" fill="#ffffff" stroke="#2d3142"/>
+        <text x="416" y="156" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">oxMWH</text>
+        <text x="416" y="180" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">标准化 · 订阅 · 序号</text>
+      </g>
+      <g>
+        <rect x="592" y="124" width="192" height="80" rx="6" fill="#ffffff" stroke="#2d3142"/>
+        <text x="688" y="156" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">有界异步发布</text>
+        <text x="688" y="180" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">慢客户端隔离</text>
+      </g>
+      <g>
+        <rect x="864" y="124" width="192" height="80" rx="6" fill="rgba(46,90,168,.06)" stroke="#2e5aa8"/>
+        <text x="960" y="156" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">Qt MarketHub</text>
+        <text x="960" y="180" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">Push 刷新页面</text>
+      </g>
+
+      <g>
+        <rect x="48" y="396" width="192" height="80" rx="6" fill="rgba(46,90,168,.06)" stroke="#2e5aa8"/>
+        <text x="144" y="428" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">Qt MarketService</text>
+        <text x="144" y="452" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">登录后分页查询</text>
+      </g>
+      <g>
+        <rect x="320" y="396" width="192" height="80" rx="6" fill="#ffffff" stroke="#2d3142"/>
+        <text x="416" y="428" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">HP-Socket 与路由</text>
+        <text x="416" y="452" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">鉴权 · request_id · IPC</text>
+      </g>
+      <g>
+        <rect x="592" y="396" width="192" height="80" rx="6" fill="rgba(235,108,54,.08)" stroke="#eb6c36" stroke-width="2"/>
+        <text x="688" y="428" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">Query Worker 与 LBM</text>
+        <text x="688" y="452" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">慢任务隔离执行</text>
+      </g>
+      <g>
+        <rect x="864" y="396" width="192" height="80" rx="6" fill="rgba(45,49,66,.05)" stroke="#4f5d75"/>
+        <text x="960" y="428" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">PostgreSQL ta_data</text>
+        <text x="960" y="452" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">QMT 已入库数据</text>
+      </g>
+
+      <rect x="1120" y="160" width="128" height="256" rx="6" fill="rgba(235,108,54,.08)" stroke="#eb6c36" stroke-width="2"/>
+      <text x="1184" y="204" text-anchor="middle" fill="#eb6c36" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace" letter-spacing="1">硬边界</text>
+      <text x="1184" y="244" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">Push 不进</text>
+      <text x="1184" y="272" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">Worker / LBM</text>
+      <text x="1184" y="300" text-anchor="middle" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, 'Noto Sans SC', sans-serif">或 PG 查询</text>
+      <text x="1184" y="340" text-anchor="middle" fill="#7a8399" font-size="12" font-family="Geist, 'Noto Sans SC', sans-serif">避免慢查询影响行情</text>
+
+      <line x1="32" y1="624" x2="1248" y2="624" stroke="rgba(45,49,66,.12)"/>
+      <text x="48" y="660" fill="#4f5d75" font-size="12" font-family="Geist Mono, 'Noto Sans Mono CJK SC', monospace">图例</text>
+      <line x1="128" y1="656" x2="192" y2="656" stroke="#2e5aa8" stroke-width="2" marker-end="url(#arrow-link)"/>
+      <text x="208" y="660" fill="#4f5d75" font-size="12" font-family="Geist, 'Noto Sans SC', sans-serif">高频实时消息</text>
+      <line x1="400" y1="656" x2="464" y2="656" stroke="#4f5d75" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="480" y="660" fill="#4f5d75" font-size="12" font-family="Geist, 'Noto Sans SC', sans-serif">低频请求与查询</text>
+      <rect x="704" y="644" width="20" height="20" rx="4" fill="rgba(235,108,54,.08)" stroke="#eb6c36"/>
+      <text x="740" y="660" fill="#4f5d75" font-size="12" font-family="Geist, 'Noto Sans SC', sans-serif">生产隔离重点</text>
+    </svg>
+    <figcaption>这张图刻意省略了 IPC 帧、函数编号和数据库字段：它只回答一件事，为什么实时行情与慢查询必须是两条不同的链路。</figcaption>
+  </figure>
+  <p class="footer">格式：HTML · 尺寸：文档宽度 1280×720 · 细节：平衡 · 读者：产品、开发与评审人员</p>
+</main>
+</body>
+</html>
