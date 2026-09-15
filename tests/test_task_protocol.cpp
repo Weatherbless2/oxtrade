@@ -147,6 +147,12 @@ void test_wire_validation_rejects_corruption() {
     assert(rejected_frame.empty());  // 编码长度检查失败时输出必须保持空，调用方不会误把部分内容送入队列。
     assert(oxmbs::ipc::decode_task(frame.data(), frame.size(), too_small).status == TaskProtocolStatus::FrameTooLarge);
 
+    const auto msgmax = oxmbs::ipc::systemv_msgmax_bytes();
+    assert(msgmax >= IpcWireLayout::kHeaderBytes);
+    assert(TaskProtocolLimits{}.max_frame_bytes <= msgmax);
+    const TaskProtocolLimits beyond_msgmax{msgmax + 1};
+    assert(oxmbs::ipc::encode_task(task, rejected_frame, error, beyond_msgmax) == TaskProtocolStatus::InvalidArgument);
+
     auto invalid_task = task;
     invalid_task.task_seq = 0;  // 制造无法与关联表对应的请求，必须在编码阶段拒绝而不是把问题交给 Worker。
     assert(oxmbs::ipc::encode_task(invalid_task, rejected_frame, error) == TaskProtocolStatus::InvalidField);

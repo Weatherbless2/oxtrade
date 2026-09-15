@@ -1,7 +1,7 @@
 # oxApp x oxMBS x QMT/PG 生产实施路线图
 
-> 版本：v1.0
-> 状态：已规划，后续工单尚未开发
+> 版本：v1.1
+> 状态：`OX-P0-10` 已完成本地开发和验收，下一步为 `OX-P0-09`
 > 规划基线：`b0984de`（原 `feature/33-oxapp-real-transport`）
 > 第一期范围：认证、低频 QMT/PG 查询、真实行情浏览、实时行情 Push 和运行保障；不包含交易、不启用 TLS。
 
@@ -9,7 +9,7 @@
 
 现在已经打通了一条**低频真实查询**：Qt 客户端通过 C++ HP-Socket、System V IPC、Query Worker 和 PostgreSQL `ta_data`，可以显示 `source=QMT/PG` 的真实行情。它证明“前端能查到真实 QMT 入库数据”，但还不是可以上线的全量行情系统。
 
-当前仍缺少正式登录、权限拦截、LBM 正式执行、分页容量、全市场页面和实时推送。因此不能把单标的查询截图当作“全量 QMT 已接入”“实时行情已经完成”或“生产联调已经验收”。
+当前仍缺少正式 LBM 执行、真实数据端到端联调、全量工作台验收和实时推送。因此不能把当前分页代码或单标的查询截图当作“实时行情已经完成”或“生产联调已经验收”。第一期认证工单不再插入当前真实数据竖切路线，交易和 TLS 仍不包含。
 
 ## 2. 当前能力表
 
@@ -19,7 +19,7 @@
 | 低频真实查询 | `PASS` | Qt -> HP-Socket -> Worker -> PG -> ReplyCollector -> Qt 返回真实数据 | 只验证了少量查询，不是完整行情浏览 |
 | 登录和权限 | `PARTIAL` | 有 `AuthService` 的 challenge、会话与权限内核 | 未接入网络路由、真实凭据、Token 续期和登录页 |
 | LBM | `PARTIAL` | 有 `funclist.xml`、动态库加载、C ABI 和 Mock 调度 | 正式 QMT 请求仍直接调用 `QmtServiceRouter::handle` |
-| Qt 行情页 | `PARTIAL` | 能显示真实 QMT/PG 查询结果 | 当前固定单行，缺少全市场、筛选、分页和总数 |
+| Qt 行情页 | `PARTIAL` | 正式模式已携带分页、排序和游标请求 | `OX-P0-11/12` 完成前不能宣称正式 LBM 和全量工作台验收 |
 | 实时行情 Push | `PLANNED` | 有 `oxMWH`、MarketWire 和工单设计 | 尚未接入 QMT 回调并推给正式 Qt 客户端 |
 
 ## 3. 最终生产架构：两条通道必须分开
@@ -84,29 +84,27 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    A[1. 真实认证] --> B[2. LBM 正式接线]
-    B --> C[3. 响应容量和分页]
-    C --> D[4. lbm_qmt 模块]
-    D --> E[5. 全量行情工作台]
-    E --> F[6. 实时 QMT Push]
-    F --> G[7. QMT 稳定性验收]
-    G --> H[8. 可观测性]
-    H --> I[9. 联调与性能]
-    I --> J[10. 部署和回滚]
+    A[1. 响应容量和分页] --> B[2. LBM 正式接线]
+    B --> C[3. lbm_qmt 模块]
+    C --> D[4. 全量行情工作台]
+    D --> E[5. 实时 QMT Push]
+    E --> F[6. QMT 稳定性验收]
+    F --> G[7. 可观测性]
+    G --> H[8. 联调与性能]
+    H --> I[9. 部署和回滚]
 ```
 
 | 顺序 | 工单 | 建议实施分支 | 目标 | 完成标志 |
 | ---: | --- | --- | --- | --- |
-| 1 | `OX-P0-05A` 真实认证与授权闭环 | `feature/34-oxmbs-production-auth` | 正式登录、Token、Session、动作权限 | 用户可登录，未授权查询被拒绝 |
+| 1 | `OX-P0-10` 响应容量与分页协议 | `feature/36-oxmbs-response-capacity` | 运行时 MSGMAX、服务端分页、全市场股票/期货合并查询 | 19 项 CTest 与 13 项相关 Python 测试通过 |
 | 2 | `OX-P0-09` LBM 生产运行时接线 | `feature/35-oxmbs-lbm-runtime` | 让正式 Worker 经过 `LbmTaskDispatcher` | 不再直接绑定 `QmtServiceRouter::handle` |
-| 3 | `OX-P0-10` 响应容量与分页协议 | `feature/36-oxmbs-response-capacity` | 从约 4 KB 升级到有边界的分页容量 | 20--200 行结果不截断、不静默丢数 |
-| 4 | `OX-P0-11` `lbm_qmt.so` | `feature/37-lbm-qmt` | 标的、日历、行情都经正式 LBM | `funclist.xml -> lbm_qmt.so -> Repository` |
-| 5 | `OX-P0-12` 全量 QMT/PG 行情工作台 | `feature/38-oxapp-qmt-workbench` | 全市场、股票/期货、筛选、分页、来源/新鲜度 | Qt 页面看到多页真实数据，无 Mock 回退 |
-| 6 | `OX-P1-01` 实时订阅与 Push | `feature/39-oxmbs-qmt-market-push` | 订阅、取消、序号、断档恢复、慢客户端处理 | 多个用户只收到各自订阅的行情 |
-| 7 | `OX-P1-02` QMT 稳定性验收 | `feature/40-qmt-realtime-acceptance` | 重连、重启、去重、陈旧、交易日切换 | 每种故障有数据库和恢复证据 |
-| 8 | `OX-P1-03` 可观测性 | `feature/41-oxmbs-observability` | 日志、指标、健康检查和告警 | 可区分网络、Worker、PG、QMT、慢客户端故障 |
-| 9 | `OX-P1-04` 联调与性能验收 | `feature/42-oxapp-production-integration` | 故障注入、并发、容量、延迟基线 | 异常不串会话、不互相拖慢 |
-| 10 | `OX-P1-05` 部署、迁移与回滚 | `feature/43-oxapp-release-ops` | 配置、服务定义、迁移、回滚、运行手册 | 可重复部署并演练回滚 |
+| 3 | `OX-P0-11` `lbm_qmt.so` | `feature/37-lbm-qmt` | 标的、日历、行情都经正式 LBM | `funclist.xml -> lbm_qmt.so -> Repository` |
+| 4 | `OX-P0-12` 全量 QMT/PG 行情工作台 | `feature/38-oxapp-qmt-workbench` | 全市场、股票/期货、筛选、分页、来源/新鲜度 | Qt 页面看到多页真实数据，无 Mock 回退 |
+| 5 | `OX-P1-01` 实时订阅与 Push | `feature/39-oxmbs-qmt-market-push` | 订阅、取消、序号、断档恢复、慢客户端处理 | 多个用户只收到各自订阅的行情 |
+| 6 | `OX-P1-02` QMT 稳定性验收 | `feature/40-qmt-realtime-acceptance` | 重连、重启、去重、陈旧、交易日切换 | 每种故障有数据库和恢复证据 |
+| 7 | `OX-P1-03` 可观测性 | `feature/41-oxmbs-observability` | 日志、指标、健康检查和告警 | 可区分网络、Worker、PG、QMT、慢客户端故障 |
+| 8 | `OX-P1-04` 联调与性能验收 | `feature/42-oxapp-production-integration` | 故障注入、并发、容量、延迟基线 | 异常不串会话、不互相拖慢 |
+| 9 | `OX-P1-05` 部署、迁移与回滚 | `feature/43-oxapp-release-ops` | 配置、服务定义、迁移、回滚、运行手册 | 可重复部署并演练回滚 |
 
 以上为未来实施分支，当前不创建空分支。每张工单都从上一张已验收提交新建分支。
 
@@ -126,7 +124,7 @@ LBM 不拥有 Socket、IPC 队列、ReplyCollector 或 Session 映射，也不�
 
 ### OX-P0-10：响应容量、分页和协议兼容
 
-现有 IPC/LBM 响应上限约 4 KB，只适合单条验证。该工单统一 PackMessage、IPC 和 LBM 的最大负载，建议提升为经测量确认的 64 KB；同时冻结 `page/page_size/total`、最大 `page_size`、版本兼容和超限错误码。
+现有 IPC/LBM 响应上限曾按 4 KiB 设计，只适合单条验证。该工单已统一 PackMessage、IPC 和 LBM 的运行时最大负载：当前 WSL `MSGMAX=8192`，设计封顶 64 KiB 但实际单帧不超过 8192；同时冻结 `page/page_size/total`、最大 `page_size=50`、版本兼容和超限错误码。
 
 不允许整表一次发送或无限制大包。验收必须证明 20、50、100 和允许上限的分页结果完整一致，超限时明确拒绝而不是截断。
 
@@ -163,4 +161,4 @@ LBM 不拥有 Socket、IPC 队列、ReplyCollector 或 Session 映射，也不�
 
 ## 8. 下一步
 
-下一张应实施的工单是 **`OX-P0-05A` 真实认证与授权闭环**。先解决“谁在查询、是否有权限、会话何时失效”，再进入 LBM、容量和全量行情页面，避免把临时 Session 和单行查询固化为生产方案。
+下一张应实施的工单是 **`OX-P0-09` LBM 生产运行时接线**。当前 `OX-P0-10` 已完成协议容量和分页边界，接下来要让正式 Worker 经过 `LbmTaskDispatcher`，再进入 `OX-P0-11` 的 `lbm_qmt.so` 和 `OX-P0-12` 全量工作台。`OX-P0-05A` 保留为独立认证能力，不插入当前真实数据竖切顺序。

@@ -49,7 +49,7 @@ void print_usage(const char* program) {
 oxmbs::ipc::IpcQueueOptions default_ipc_queue_options() {
     oxmbs::ipc::IpcQueueOptions options;
     const auto max_frame_bytes = oxmbs::ipc::TaskProtocolLimits{}.max_frame_bytes;
-    options.request.max_bytes = max_frame_bytes;  // 当前临时总队列容量与单帧协议上限均为 4 KiB；后续由运行配置统一注入。
+    options.request.max_bytes = max_frame_bytes;  // 队列目标容量与单帧协议上限使用同一运行时门禁，不假设固定 4 KiB。
     options.reply.max_bytes = max_frame_bytes;
     options.request.permissions = 0600;
     options.reply.permissions = 0600;
@@ -157,6 +157,7 @@ int main(int argc, char** argv) {
     oxmbs::storage::QmtRepository qmt_repository(database_pool);
     oxmbs::service::QmtRepositoryAdapter qmt_repository_adapter(qmt_repository);
     oxmbs::service::QmtServiceRouterOptions qmt_options;
+    qmt_options.max_page_size = 50;  // 正式客户端默认页大小为 20，服务端封顶 50，避免单次 QMT 回包接近 IPC 上限。
     qmt_options.routes = {
         {2, 1, oxmbs::service::QmtOperation::InstrumentSearch},
         {2, 2, oxmbs::service::QmtOperation::CalendarPage},

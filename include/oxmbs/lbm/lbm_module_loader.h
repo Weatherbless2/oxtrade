@@ -26,7 +26,8 @@ enum class LbmModuleStatus {
 const char* lbm_module_status_name(LbmModuleStatus status) noexcept;
 
 struct LbmModuleLoaderOptions {
-    std::size_t max_response_payload_bytes{4032};  // 4096 最大帧减去 56 字节 v2 固定头，防止 LBM 结果到编码阶段才溢出。
+    std::size_t max_response_payload_bytes{
+        ipc::TaskProtocolLimits{}.max_frame_bytes - ipc::IpcWireLayout::kHeaderBytes};  // 与运行时 MSGMAX 对齐，LBM 输出不会在 Response 编码阶段才溢出。
 };
 
 struct LbmModuleResult {

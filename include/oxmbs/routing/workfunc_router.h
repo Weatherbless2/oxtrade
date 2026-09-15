@@ -32,7 +32,7 @@ enum class WorkFuncRouteStatus {
 const char* workfunc_route_status_name(WorkFuncRouteStatus status) noexcept;
 
 struct WorkFuncRouterOptions {
-    ipc::TaskProtocolLimits protocol_limits{};  // 临时默认 4 KiB；后续应与运行配置和内核 MSGMAX 一起统一管理。
+    ipc::TaskProtocolLimits protocol_limits{};  // 默认值由运行时 MSGMAX 计算，保证路由、Worker 和 ReplyCollector 使用同一帧上限。
     std::chrono::milliseconds query_task_timeout{1000};  // Mock 阶段的显式暂定值；真实部署应由 mbsconfig.ini 注入。
     long request_message_type{1};  // System V 传输层 mtype，不等同于业务 msg_type，必须保持正数。
 };

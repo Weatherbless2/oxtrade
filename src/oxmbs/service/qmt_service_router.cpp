@@ -496,7 +496,9 @@ std::string page_data(std::string items, std::size_t total, const storage::PageR
     const bool has_more = page.offset <= std::numeric_limits<std::size_t>::max() - page.limit && page.offset + page.limit < total;
     const auto next_offset = page.offset + page.limit;
     const std::string token = has_more ? json_string("v1:" + std::to_string(next_offset)) : "null";
+    const auto page_number = page.limit == 0 ? 1U : (page.offset / page.limit) + 1U;
     return "{\"items\":" + std::move(items) + ",\"total\":" + std::to_string(total) +
+           ",\"page\":" + std::to_string(page_number) + ",\"page_size\":" + std::to_string(page.limit) +
            ",\"has_more\":" + (has_more ? "true" : "false") + ",\"next_page_token\":" + token + "}";
 }
 
@@ -613,13 +615,22 @@ bool QmtRepositoryAdapter::list_futures_quotes(const std::string& market, const 
                                                storage::RepositoryFailure& failure) const {
     return repository_ != nullptr && repository_->list_futures_quotes(market, stkcode, page, result, failure);
 }
+bool QmtRepositoryAdapter::list_all_latest_quotes(const std::string& stkcode,
+                                                  const storage::PageRequest& page,
+                                                  storage::PageResult<storage::LatestQuoteRecord>& result,
+                                                  storage::RepositoryFailure& failure) const {
+    return repository_ != nullptr && repository_->list_all_latest_quotes(stkcode, page, result, failure);
+}
 
 QmtServiceRouter::QmtServiceRouter(IQmtRepository& repository, QmtServiceRouterOptions options)
     : repository_(&repository), options_(std::move(options)) {
 }
 
 QmtServiceResult QmtServiceRouter::execute(const ipc::IpcTaskMsg& task) const {
-    if (repository_ == nullptr || options_.max_page_size == 0 || options_.max_page_size > 200 || options_.max_instrument_count == 0) {
+    const auto frame_limit = ipc::TaskProtocolLimits{}.max_frame_bytes;
+    if (repository_ == nullptr || options_.max_page_size == 0 || options_.max_page_size > 200 ||
+        options_.max_instrument_count == 0 || options_.max_response_payload_bytes == 0 ||
+        options_.max_response_payload_bytes > frame_limit - ipc::IpcWireLayout::kHeaderBytes) {
         return result_with_payload(ipc::IpcResponseStatus::Failed, network::PackMessageErrorCode::InternalError,
                                    "QMT service router options are invalid", "{}");
     }
@@ -630,7 +641,13 @@ QmtServiceResult QmtServiceRouter::execute(const ipc::IpcTaskMsg& task) const {
     const auto* route = resolve(task.msg_type, task.func_id);
     if (route == nullptr) return invalid_result("no QMT service route for message type/function");
     const auto* bytes = task.payload.empty() ? reinterpret_cast<const std::uint8_t*>("") : task.payload.data();
-    return execute_operation(route->operation, task, std::string_view(reinterpret_cast<const char*>(bytes), task.payload.size()));
+    auto result = execute_operation(route->operation, task, std::string_view(reinterpret_cast<const char*>(bytes), task.payload.size()));
+    if (result.payload.size() > options_.max_response_payload_bytes) {
+        // 响应在 Service 层截断前被拒绝，调用方可以据此改小 page_size，而不会收到不可编码的半包。
+        return result_with_payload(ipc::IpcResponseStatus::Rejected, network::PackMessageErrorCode::FrameTooLarge,
+                                   "response payload exceeds configured limit; reduce page_size", "{}");
+    }
+    return result;
 }
 
 worker::QueryExecutionResult QmtServiceRouter::handle(const ipc::IpcTaskMsg& task, void* context) {
@@ -752,19 +769,34 @@ QmtServiceResult QmtServiceRouter::execute_operation(QmtOperation operation, con
         bool first = true;
         for (const auto& [market, stkcode] : selections) {
             storage::PageRequest quote_page = page;
-            quote_page.limit = 1;
-            quote_page.offset = 0;
-            if (futures_market(market)) {
+            // 指定 instruments 时每个标的最多返回一条最新快照；全市场请求则完整使用 page/page_token。
+            if (instruments != nullptr) {
+                quote_page.limit = 1;
+                quote_page.offset = 0;
+            }
+            if (market.empty()) {
+                // 空市场由 Repository 在 PostgreSQL 中 UNION ALL 两张核心行情表后再分页，
+                // 保证 page_token 是整个 QMT 数据集的游标，不会因分别 OFFSET 两张表而漏行或重复。
+                storage::PageResult<storage::LatestQuoteRecord> result;
+                storage::RepositoryFailure failure;
+                if (!repository_->list_all_latest_quotes(stkcode, quote_page, result, failure)) return repository_result(failure);
+                total = result.total;
+                for (const auto& row : result.rows) {
+                    if (!first) items += ',';
+                    first = false;
+                    items += row.is_futures ? futures_quote_json(row.futures) : stock_quote_json(row.stock);
+                }
+            } else if (futures_market(market)) {
                 storage::PageResult<storage::FuturesQuoteRecord> result;
                 storage::RepositoryFailure failure;
                 if (!repository_->list_futures_quotes(market, stkcode, quote_page, result, failure)) return repository_result(failure);
-                total += result.rows.size();
+                total += result.total;
                 for (const auto& row : result.rows) { if (!first) items += ','; first = false; items += futures_quote_json(row); }
             } else {
                 storage::PageResult<storage::StockQuoteRecord> result;
                 storage::RepositoryFailure failure;
                 if (!repository_->list_stock_quotes(market, stkcode, quote_page, result, failure)) return repository_result(failure);
-                total += result.rows.size();
+                total += result.total;
                 for (const auto& row : result.rows) { if (!first) items += ','; first = false; items += stock_quote_json(row); }
             }
         }

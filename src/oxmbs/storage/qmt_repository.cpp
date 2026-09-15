@@ -458,6 +458,87 @@ bool QmtRepository::list_futures_quotes(const std::string& market,
     return true;
 }
 
+bool QmtRepository::list_all_latest_quotes(const std::string& stkcode,
+                                           const PageRequest& page,
+                                           PageResult<LatestQuoteRecord>& result,
+                                           RepositoryFailure& failure) const {
+    result = {};
+    std::string error;
+    if (!validate_page_request(page, error) || stkcode.size() > 64) {
+        failure = {RepositoryStatus::InvalidArgument,
+                   error.empty() ? "invalid all-quote filter" : error,
+                   {}};
+        return false;
+    }
+    std::string order;
+    if (!order_for(page, "receive_time", {
+                       {"market", "market"},
+                       {"stkcode", "stkcode"},
+                       {"quote_time", "quote_time"},
+                       {"receive_time", "receive_time"},
+                       {"last_price", "last_price"},
+                   }, order, error)) {
+        failure = {RepositoryStatus::InvalidArgument, error, {}};
+        return false;
+    }
+    std::unique_ptr<PostgresConnectionPool::Lease> lease;
+    if (!acquire(lease, failure)) {
+        return false;
+    }
+    // 两张 QMT 最新行情表先归一为同一列布局，再在数据库侧排序/分页；COUNT(*) OVER() 统计整个合并结果集。
+    const std::string sql =
+        "SELECT combined.*, COUNT(*) OVER() FROM ("
+        "SELECT false AS is_futures, btrim(p.market) AS market, p.stkcode, p.quote_time::text AS quote_time, "
+        "p.receive_time::text AS receive_time, COALESCE(p.last_price::text, ''), COALESCE(p.open_price::text, ''), "
+        "COALESCE(p.high_price::text, ''), COALESCE(p.low_price::text, ''), COALESCE(p.pre_close::text, ''), "
+        "COALESCE(p.volume::text, ''), COALESCE(p.amount::text, ''), COALESCE(p.bid_price_1::text, ''), "
+        "COALESCE(p.bid_volume_1::text, ''), COALESCE(p.ask_price_1::text, ''), COALESCE(p.ask_volume_1::text, ''), "
+        "'' AS settlement, '' AS open_interest, COALESCE(i.stkname, '') AS stkname "
+        "FROM ta_data.stkprice p JOIN ta_data.stkinfo i USING (market, stkcode) "
+        "WHERE ($1 = '' OR p.stkcode ILIKE '%' || $1 || '%') "
+        "UNION ALL "
+        "SELECT true AS is_futures, btrim(p.market) AS market, p.stkcode, p.quote_time::text AS quote_time, "
+        "p.receive_time::text AS receive_time, COALESCE(p.last_price::text, ''), COALESCE(p.open_price::text, ''), "
+        "COALESCE(p.high_price::text, ''), COALESCE(p.low_price::text, ''), COALESCE(p.pre_close::text, ''), "
+        "COALESCE(p.volume::text, ''), COALESCE(p.amount::text, ''), COALESCE(p.bid_price_1::text, ''), "
+        "COALESCE(p.bid_volume_1::text, ''), COALESCE(p.ask_price_1::text, ''), COALESCE(p.ask_volume_1::text, ''), "
+        "COALESCE(p.settlement::text, ''), COALESCE(p.open_interest::text, ''), COALESCE(i.stkname, '') AS stkname "
+        "FROM ta_data.ft_stkprice p JOIN ta_data.ft_stkinfo i USING (market, stkcode) "
+        "WHERE ($1 = '' OR p.stkcode ILIKE '%' || $1 || '%')"
+        ") AS combined" + order + " , market, stkcode LIMIT $2::bigint OFFSET $3::bigint";
+    const std::vector<std::optional<std::string>> parameters{
+        stkcode, text_param(page.limit), text_param(page.offset)};
+    PostgresFailure pg_failure;
+    auto rows = lease->connection().exec_prepared("oxapp_all_latest_quotes_page", sql, parameters, pg_failure);
+    if (!rows.ok()) {
+        copy_failure(pg_failure, failure);
+        return false;
+    }
+    result.total = rows.row_count() == 0 ? 0 : parse_total(rows, 0);
+    result.rows.reserve(static_cast<std::size_t>(rows.row_count()));
+    for (int row = 0; row < rows.row_count(); ++row) {
+        const bool is_futures = rows.value(row, 0) == "t" || rows.value(row, 0) == "true";
+        if (is_futures) {
+            FuturesQuoteRecord quote{
+                rows.value(row, 1), rows.value(row, 2), rows.value(row, 3), rows.value(row, 4),
+                rows.value(row, 5), rows.value(row, 6), rows.value(row, 7), rows.value(row, 8),
+                rows.value(row, 9), rows.value(row, 16), rows.value(row, 10), rows.value(row, 11),
+                rows.value(row, 17), rows.value(row, 12), rows.value(row, 13), rows.value(row, 14),
+                rows.value(row, 15), rows.value(row, 18)};
+            result.rows.push_back({true, {}, std::move(quote)});
+        } else {
+            StockQuoteRecord quote{
+                rows.value(row, 1), rows.value(row, 2), rows.value(row, 3), rows.value(row, 4),
+                rows.value(row, 5), rows.value(row, 6), rows.value(row, 7), rows.value(row, 8),
+                rows.value(row, 9), rows.value(row, 10), rows.value(row, 11), rows.value(row, 12),
+                rows.value(row, 13), rows.value(row, 14), rows.value(row, 15), rows.value(row, 18)};
+            result.rows.push_back({false, std::move(quote), {}});
+        }
+    }
+    failure = {RepositoryStatus::Ok, {}, {}};
+    return true;
+}
+
 bool QmtRepository::list_freshness(std::vector<FreshnessRecord>& result,
                                    RepositoryFailure& failure) const {
     result.clear();

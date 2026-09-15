@@ -37,10 +37,6 @@ enum class TaskProtocolStatus {
     InvalidField,          // task_seq、session_id、msg_type 或 status 等业务字段非法。
 };
 
-struct TaskProtocolLimits {
-    std::size_t max_frame_bytes{4096};  // 与当前 System V 队列容量对齐，后续可由运行配置在不超过内核 MSGMAX 的范围内调整。
-};
-
 struct IpcWireLayout {
     static constexpr std::uint32_t kMagic{0x4F584D42U};  // 固定魔数 OXMB，先识别无关/损坏字节再进行字段解析。
     static constexpr std::uint16_t kVersion{2};  // v2 增加跨进程 deadline；v1 没有该字段，必须拒绝而不是猜测补默认值。
@@ -58,6 +54,13 @@ struct IpcWireLayout {
     static constexpr std::size_t kFunctionIdOffset{44};
     static constexpr std::size_t kResponseStatusOffset{48};
     static constexpr std::size_t kPayloadBytesOffset{52};
+};
+
+std::size_t systemv_msgmax_bytes() noexcept;
+std::size_t default_task_frame_bytes() noexcept;
+
+struct TaskProtocolLimits {
+    std::size_t max_frame_bytes{default_task_frame_bytes()};  // Runtime cap is bounded by Linux System V MSGMAX.
 };
 
 struct IpcTaskMsg {

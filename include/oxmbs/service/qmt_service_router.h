@@ -61,6 +61,10 @@ public:
                                      const storage::PageRequest& page,
                                      storage::PageResult<storage::FuturesQuoteRecord>& result,
                                      storage::RepositoryFailure& failure) const = 0;
+    virtual bool list_all_latest_quotes(const std::string& stkcode,
+                                        const storage::PageRequest& page,
+                                        storage::PageResult<storage::LatestQuoteRecord>& result,
+                                        storage::RepositoryFailure& failure) const = 0;
 };
 
 // 生产适配器只转发到 OX-P0-06 的 QmtRepository，不复制 SQL 或连接池所有权。
@@ -77,6 +81,8 @@ public:
                            storage::PageResult<storage::StockQuoteRecord>&, storage::RepositoryFailure&) const override;
     bool list_futures_quotes(const std::string&, const std::string&, const storage::PageRequest&,
                              storage::PageResult<storage::FuturesQuoteRecord>&, storage::RepositoryFailure&) const override;
+    bool list_all_latest_quotes(const std::string&, const storage::PageRequest&,
+                                storage::PageResult<storage::LatestQuoteRecord>&, storage::RepositoryFailure&) const override;
 
 private:
     storage::QmtRepository* repository_{nullptr};
@@ -86,6 +92,8 @@ struct QmtServiceRouterOptions {
     std::vector<QmtRouteBinding> routes;
     std::size_t max_page_size{200};
     std::size_t max_instrument_count{200};
+    std::size_t max_response_payload_bytes{
+        ipc::TaskProtocolLimits{}.max_frame_bytes - ipc::IpcWireLayout::kHeaderBytes};  // 响应正文必须为协议固定头预留空间，避免回包阶段才发现超限。
     bool require_authenticated_session{true};
 };
 

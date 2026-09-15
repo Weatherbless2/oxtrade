@@ -33,6 +33,11 @@ class MarketService(BaseService):
     def list_quotes(self, **filters: Any) -> Future[ClientResponse]:
         if self._formal_qmt:
             market, stkcode = self._parse_qmt_selection(filters.get("query", ""))
+            page = max(1, int(filters.get("page", 1) or 1))
+            page_size = max(1, min(50, int(filters.get("page_size", 20) or 20)))
+            page_token = str(filters.get("page_token", "") or "")
+            if not page_token and page > 1:
+                page_token = f"v1:{(page - 1) * page_size}"
             return self.client.request(
                 session_id=self.current_session_id,
                 msg_type="quote",
@@ -45,7 +50,12 @@ class MarketService(BaseService):
                         "stkcode": stkcode,
                         "freshness_max_age_ms": 300_000,
                     },
-                    "page": {"page_size": 1},
+                    "page": {
+                        "page_size": page_size,
+                        "page_token": page_token,
+                        "sort": str(filters.get("sort", "receive_time") or "receive_time"),
+                        "descending": bool(filters.get("descending", True)),
+                    },
                 },
             )  # 真实页面查询直接走正式 quote.latest，回包中的 source=QMT/PG 原样保留。
         if self.market_hub is not None and self.market_hub.has_data:
@@ -79,7 +89,7 @@ class MarketService(BaseService):
 
         query = str(value or "").strip().upper()
         if not query:
-            return "1", ""  # 默认查询上海市场最近一条真实快照，页面不会生成 Mock 行。
+            return "", ""  # 空筛选表示全市场分页，服务端从 ta_data.stkprice/ft_stkprice 读取真实快照。
         if ":" in query:
             market, separator, stkcode = query.partition(":")
             return market.strip(), stkcode.strip()

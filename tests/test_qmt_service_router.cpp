@@ -93,6 +93,23 @@ public:
         return page_rows(filtered, page, result, failure);
     }
 
+    bool list_all_latest_quotes(const std::string& stkcode,
+                                const storage::PageRequest& page,
+                                storage::PageResult<storage::LatestQuoteRecord>& result,
+                                storage::RepositoryFailure& failure) const override {
+        if (failure_status != storage::RepositoryStatus::Ok) return fail(failure);
+        std::vector<storage::LatestQuoteRecord> filtered;
+        for (const auto& row : stock_quotes) {
+            if (!stkcode.empty() && row.stkcode != stkcode) continue;
+            filtered.push_back({false, row, {}});
+        }
+        for (const auto& row : futures_quotes) {
+            if (!stkcode.empty() && row.stkcode != stkcode) continue;
+            filtered.push_back({true, {}, row});
+        }
+        return page_rows(filtered, page, result, failure);
+    }
+
 private:
     template <typename Row>
     static bool page_rows(const std::vector<Row>& source, const storage::PageRequest& page,
@@ -112,7 +129,7 @@ private:
     }
 };
 
-service::QmtServiceRouter make_router(MemoryQmtRepository& repository) {
+service::QmtServiceRouter make_router(MemoryQmtRepository& repository, std::size_t max_response_payload_bytes = 0) {
     service::QmtServiceRouterOptions options;
     options.routes = {
         {1, 10, service::QmtOperation::InstrumentSearch},
@@ -122,6 +139,7 @@ service::QmtServiceRouter make_router(MemoryQmtRepository& repository) {
     };
     options.max_page_size = 20;
     options.max_instrument_count = 4;
+    if (max_response_payload_bytes != 0) options.max_response_payload_bytes = max_response_payload_bytes;
     return service::QmtServiceRouter(repository, std::move(options));
 }
 
@@ -204,11 +222,45 @@ void test_auth_gate_repository_mapping_and_worker_handler() {
     assert(std::string(worker_result.payload.begin(), worker_result.payload.end()).find("000001.SZ") != std::string::npos);
 }
 
+void test_quote_full_market_pagination_and_capacity() {
+    MemoryQmtRepository repository;
+    repository.stock_quotes = {
+        {"0", "000001", "2026-09-15T09:30:00", "2026-09-15T09:30:01", "10", "", "", "", "", "", "", "", "", "", "", "平安银行"},
+        {"1", "600000", "2026-09-15T09:30:00", "2026-09-15T09:30:01", "8", "", "", "", "", "", "", "", "", "", "浦发银行"},
+    };
+    repository.futures_quotes = {
+        {"F", "IF2609", "2026-09-15T09:30:00", "2026-09-15T09:30:01", "4000", "", "", "", "", "", "", "", "", "", "", "", "股指期货"},
+    };
+    auto router = make_router(repository);
+    const auto first = router.execute(task_for(
+        12, R"({"schema_version":1,"request_id":"all-1","data":{},"page":{"page_size":1,"sort":"receive_time","descending":true}})"));
+    assert(first.ipc_status == ipc::IpcResponseStatus::Ok);
+    const auto first_text = text(first);
+    assert(first_text.find("\"total\":3") != std::string::npos);
+    assert(first_text.find("\"page\":1") != std::string::npos);
+    assert(first_text.find("\"page_size\":1") != std::string::npos);
+    assert(first_text.find("000001") != std::string::npos);
+
+    const auto second = router.execute(task_for(
+        12, R"({"schema_version":1,"request_id":"all-2","data":{},"page":{"page_size":1,"page_token":"v1:1","sort":"receive_time","descending":true}})"));
+    assert(second.ipc_status == ipc::IpcResponseStatus::Ok);
+    const auto second_text = text(second);
+    assert(second_text.find("\"page\":2") != std::string::npos);
+    assert(second_text.find("600000") != std::string::npos);
+
+    auto limited_router = make_router(repository, 100);
+    const auto limited = limited_router.execute(task_for(
+        12, R"({"schema_version":1,"request_id":"too-large","data":{},"page":{"page_size":20}})"));
+    assert(limited.ipc_status == ipc::IpcResponseStatus::Rejected);
+    assert(limited.error_code == network::PackMessageErrorCode::FrameTooLarge);
+}
+
 }  // namespace
 
 int main() {
     test_instrument_query_and_pagination();
     test_empty_invalid_and_unavailable_results();
     test_auth_gate_repository_mapping_and_worker_handler();
+    test_quote_full_market_pagination_and_capacity();
     return 0;
 }

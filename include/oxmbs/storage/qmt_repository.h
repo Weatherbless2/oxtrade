@@ -99,6 +99,12 @@ struct FuturesQuoteRecord {
     std::string stkname;
 };
 
+struct LatestQuoteRecord {
+    bool is_futures{false};
+    StockQuoteRecord stock;
+    FuturesQuoteRecord futures;
+};
+
 struct FreshnessRecord {
     std::string dataset;
     std::size_t rows{0};
@@ -159,6 +165,11 @@ public:
                              PageResult<FuturesQuoteRecord>& result,
                              RepositoryFailure& failure) const;
 
+    bool list_all_latest_quotes(const std::string& stkcode,
+                                const PageRequest& page,
+                                PageResult<LatestQuoteRecord>& result,
+                                RepositoryFailure& failure) const;
+
     bool list_freshness(std::vector<FreshnessRecord>& result,
                         RepositoryFailure& failure) const;
 
@@ -173,4 +184,3 @@ private:
 };
 
 }  // namespace oxmbs::storage
-

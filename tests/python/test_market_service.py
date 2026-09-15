@@ -55,12 +55,25 @@ class MarketServiceTest(unittest.TestCase):
         client = FallbackClient()
         client.transport = HpSocketTransport()
         service = MarketService(client)
-        future = service.list_quotes(query="688693.SH")
+        future = service.list_quotes(query="688693.SH", page=3, page_size=20, sort="receive_time", descending=True)
         self.assertEqual("quote", client.calls[0]["msg_type"])
         self.assertEqual("latest", client.calls[0]["func_id"])
         self.assertEqual("1", client.calls[0]["payload"]["data"]["market"])
         self.assertEqual("688693", client.calls[0]["payload"]["data"]["stkcode"])
         self.assertEqual(1, client.calls[0]["payload"]["schema_version"])
+        self.assertEqual(20, client.calls[0]["payload"]["page"]["page_size"])
+        self.assertEqual("v1:40", client.calls[0]["payload"]["page"]["page_token"])
+        del future
+
+    def test_formal_transport_empty_query_requests_full_qmt_page(self) -> None:
+        client = FallbackClient()
+        client.transport = HpSocketTransport()
+        service = MarketService(client)
+        future = service.list_quotes(page=1, page_size=20)
+        self.assertEqual("", client.calls[0]["payload"]["data"]["market"])
+        self.assertEqual("", client.calls[0]["payload"]["data"]["stkcode"])
+        self.assertEqual(20, client.calls[0]["payload"]["page"]["page_size"])
+        self.assertEqual("receive_time", client.calls[0]["payload"]["page"]["sort"])
         del future
 
     def test_formal_transport_does_not_fallback_to_mock_for_unavailable_tables(self) -> None:

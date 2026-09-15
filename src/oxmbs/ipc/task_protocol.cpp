@@ -1,5 +1,7 @@
 #include "oxmbs/ipc/task_protocol.h"
 
+#include <algorithm>
+#include <fstream>
 #include <limits>
 #include <utility>
 
@@ -21,7 +23,7 @@ struct DecodedHeader {
 bool limits_are_valid(const TaskProtocolLimits& limits) noexcept {
     // 小于固定头会让“合法空 payload 帧”也无法容纳；大于 uint32_t 则无法写入本协议的长度字段。
     return limits.max_frame_bytes >= IpcWireLayout::kHeaderBytes &&
-           limits.max_frame_bytes <= std::numeric_limits<std::uint32_t>::max();
+           limits.max_frame_bytes <= std::numeric_limits<std::uint32_t>::max() && limits.max_frame_bytes <= systemv_msgmax_bytes();
 }
 
 bool is_valid_response_status(std::uint32_t value) noexcept {
@@ -93,7 +95,7 @@ TaskProtocolStatus encode_message(IpcMessageKind kind,
     frame.clear();  // 编码失败不能留下可被误发送的半帧，调用方只能在 Ok 后把 frame 交给队列。
     error.clear();
     if (!limits_are_valid(limits)) {  // 防止长度限制本身无法表示协议固定头，失败时没有任何资源或半帧需要回滚。
-        error = "max_frame_bytes must be between the header size and uint32_t maximum";
+        error = "max_frame_bytes must be between the header size and the runtime System V MSGMAX";
         return TaskProtocolStatus::InvalidArgument;
     }
     if (task_seq == 0 || session_id == 0 || deadline_unix_ms == 0 || msg_type == 0) {  // 零 deadline 无法让 Worker 判断是否过期，必须在进队前拦截。
@@ -218,6 +220,22 @@ TaskProtocolStatus decode_header(const std::uint8_t* frame,
 }
 
 }  // namespace
+
+std::size_t systemv_msgmax_bytes() noexcept {
+#if defined(__linux__)
+    std::ifstream input("/proc/sys/kernel/msgmax");
+    std::size_t value{0};
+    if (input >> value && value >= IpcWireLayout::kHeaderBytes) {
+        return value;
+    }
+#endif
+    return 4096U;
+}
+
+std::size_t default_task_frame_bytes() noexcept {
+    constexpr std::size_t kLowFrequencyFrameCap{64U * 1024U};
+    return std::min(systemv_msgmax_bytes(), kLowFrequencyFrameCap);
+}
 
 TaskProtocolStatus encode_task(const IpcTaskMsg& message,
                                IpcPayload& frame,
