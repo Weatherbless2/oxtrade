@@ -15,7 +15,7 @@ from .table_page import ServiceTablePage, TableSpec
 
 try:
     from PySide6.QtCore import QTimer, Signal
-    from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
     PYSIDE_AVAILABLE = True
 except ImportError:
     PYSIDE_AVAILABLE = False
@@ -41,7 +41,9 @@ if PYSIDE_AVAILABLE:
             self._refresh_timer.timeout.connect(self._refresh_from_market)  # 高频事件先合并，单个 Tick 不应逐条触发表格重绘。
             self._symbols = QComboBox()
             symbols = (
-                (("688693.SH", "锴威特"), ("110075.SH", "南航转债"))
+                (("", "全市场"), ("0", "深市股票"), ("1", "沪市股票"), ("2", "北交所股票"),
+                 ("D", "大商所期货"), ("F", "中金所期货"), ("H", "上期所期货"),
+                 ("Z", "郑商所期货"), ("I", "上期能源期货"), ("G", "广期所期货"))
                 if self._formal_qmt else
                 (("000001.SZ", "平安银行"), ("600000.SH", "浦发银行"), ("600519.SH", "贵州茅台"),
                  ("000300.SZ", "沪深300"), ("510300.SH", "300ETF"), ("IF2609.CFX", "IF2609"),
@@ -49,14 +51,20 @@ if PYSIDE_AVAILABLE:
             )
             for symbol, name in symbols:
                 self._symbols.addItem(f"{symbol}  {name}", symbol)
+            self._keyword = QLineEdit()
+            self._keyword.setPlaceholderText("代码或名称筛选")
+            self._keyword.setClearButtonEnabled(True)
+            self._keyword.setVisible(self._formal_qmt)
             subscribe = QPushButton("订阅行情")
             subscribe.clicked.connect(self._subscribe)
-            self._status = QLabel("行情源：正在初始化")
+            subscribe.setVisible(not self._formal_qmt)  # 正式实时订阅属于 OX-P1-01，快照工作台不提供无效按钮。
+            self._status = QLabel("真实数据：正在读取 QMT/PG 全市场快照" if self._formal_qmt else "行情源：正在初始化")
             self._status.setObjectName("tableSummary")
             toolbar_layout = QHBoxLayout()
             toolbar_layout.setContentsMargins(0, 0, 0, 0)
-            toolbar_layout.addWidget(QLabel("标的"))
+            toolbar_layout.addWidget(QLabel("数据范围" if self._formal_qmt else "标的"))
             toolbar_layout.addWidget(self._symbols)
+            toolbar_layout.addWidget(self._keyword, 1)
             toolbar_layout.addWidget(subscribe)
             toolbar_layout.addWidget(self._status, 1)
             toolbar = QFrame()
@@ -65,8 +73,8 @@ if PYSIDE_AVAILABLE:
 
             specs = (
                 TableSpec(
-                    "行情列表",
-                    (("instrument_id", "标的"), ("name", "名称"), ("market", "市场"), ("last_price", "最新"),
+                    "全市场行情" if self._formal_qmt else "行情列表",
+                    (("instrument_id", "标的"), ("name", "名称"), ("asset_class", "类型"), ("market", "市场"), ("last_price", "最新"),
                      ("pre_close", "昨收"), ("volume", "成交量"), ("amount", "成交额"),
                      ("quote_time", "行情时间"), ("receive_time", "入库时间"), ("source", "来源"))
                     if self._formal_qmt else
@@ -94,6 +102,8 @@ if PYSIDE_AVAILABLE:
                     lambda filters: self.service.list_depth(**filters),
                 ),
             )
+            if self._formal_qmt:
+                specs = specs[:1]  # 本期只展示已有真实 PG 快照；Tick/K线/盘口在没有对应真实表时不占用用户工作区。
             self._tables = ServiceTablePage(client, bridge, logger, specs)
             self._tabs = self._tables._tabs  # 主窗口刷新按钮沿用 ServiceTablePage 的当前页刷新语义。
             layout = QVBoxLayout(self)
@@ -109,9 +119,10 @@ if PYSIDE_AVAILABLE:
                 self._hub_unsubscribers.append(self.market_hub.add_state_listener(
                     lambda status: bridge.publish_market_state(status.state.value, f"{status.source} | {status.reason}"),
                 ))  # Hub 在后台线程通知 Qt bridge，页面自身绝不注册跨线程 QWidget 回调。
-            else:
+            elif not self._formal_qmt:
                 self._status.setText("行情源：未订阅")
             self._symbols.currentIndexChanged.connect(self._refresh_selected_symbol)  # 表格对象已就绪后再监听选择变化，避免构造期信号访问未创建成员。
+            self._keyword.returnPressed.connect(self._refresh_selected_symbol)
             self._set_symbol_filter()
             self._tables._load(0)  # ServiceTablePage 构造时已请求过未筛选快照；此处发起当前标的筛选的正式初始请求。
 
@@ -121,15 +132,20 @@ if PYSIDE_AVAILABLE:
 
         def _set_symbol_filter(self) -> None:
             symbol = str(self._symbols.currentData() or "")
-            indices = (0, 1, 2, 3) if self._formal_qmt else (1, 2, 3)
+            if self._formal_qmt:
+                keyword = self._keyword.text().strip()
+                symbol = f"{symbol}:{keyword}" if symbol else keyword
+            indices = (0,) if self._formal_qmt else (1, 2, 3)
             for index in indices:
-                self._tables._panels[index][1].set_query_text(symbol)  # Tick/K线/盘口按当前标的请求，行情总表仍保留全市场扫描视图。
+                self._tables._panels[index][1].set_query_text(symbol)  # 正式模式默认空筛选就是全市场；市场码和关键词由后端统一过滤。
 
         def _refresh_selected_symbol(self) -> None:
             self._set_symbol_filter()
             self._load_current(self._tabs.currentIndex())  # 切换标的立即重新请求当前页，不能只改输入框而显示旧数据。
 
         def _subscribe(self) -> None:
+            if self._formal_qmt:
+                return  # 按钮在正式快照模式隐藏；此处额外保护，避免程序化触发未实现的 Push 请求。
             symbol = str(self._symbols.currentData() or "")  # 下拉框保存内部标准代码，不把带中文名称的展示文本发给 Feed。
             future = self.service.subscribe([symbol])  # 沪深股票进入 Hub Feed，期货继续走既有 MockGateway/未来正式 SDK。
             request_id = getattr(future, "request_id", "")
@@ -147,18 +163,28 @@ if PYSIDE_AVAILABLE:
                 self.logger.error(f"market_response_publish_failed error={error!r}", module="oxApp.market")
 
         def _on_response(self, response: ClientResponse) -> None:
-            if response.request_id not in self._pending:
+            if response.request_id in self._pending:
+                self._pending.discard(response.request_id)
+                if response.is_success:
+                    source = str(response.payload.get("source", "行情服务"))
+                    if "mock" in source.lower():
+                        source = "行情服务"
+                    self._status.setText(f"行情源：{source} | 已订阅 {response.payload.get('symbols', '当前标的')}")
+                    self.subscription_changed.emit(str(response.payload.get("symbols", "")))
+                    self._load_current(self._tabs.currentIndex())
+                else:
+                    self._status.setText(f"订阅失败：{response.error_message}")
                 return
-            self._pending.discard(response.request_id)
-            if response.is_success:
-                source = str(response.payload.get("source", "行情服务"))
-                if "mock" in source.lower():
-                    source = "行情服务"
-                self._status.setText(f"行情源：{source} | 已订阅 {response.payload.get('symbols', '当前标的')}")
-                self.subscription_changed.emit(str(response.payload.get("symbols", "")))
-                self._load_current(self._tabs.currentIndex())
-            else:
-                self._status.setText(f"订阅失败：{response.error_message}")
+            if self._formal_qmt and response.is_success and isinstance(response.payload.get("items"), list):
+                items = response.payload["items"]
+                total = int(response.payload.get("total", len(items)))
+                futures = sum(1 for item in items if item.get("asset_class") == "futures")
+                source = str(items[0].get("source", "QMT/PG")) if items else "QMT/PG"
+                self._status.setText(
+                    f"真实数据：{source} | 共 {total} 条 | 当前页 {len(items)} 条（期货 {futures} 条）"
+                )  # 页面状态只由正式回包更新，失败时 ServiceTablePage 会保留明确错误而不展示 Mock。
+            elif not self._formal_qmt:
+                return
 
         def _on_market_event(self, event: object) -> None:
             if self.market_hub is None or not hasattr(event, "symbol"):

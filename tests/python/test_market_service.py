@@ -76,6 +76,17 @@ class MarketServiceTest(unittest.TestCase):
         self.assertEqual("receive_time", client.calls[0]["payload"]["page"]["sort"])
         del future
 
+    def test_formal_transport_preserves_market_scope_and_keyword_for_real_workbench(self) -> None:
+        client = FallbackClient()
+        client.transport = HpSocketTransport()
+        service = MarketService(client)
+        future = service.list_quotes(query="F:IF2609", page=2, page_size=20)
+        data = client.calls[0]["payload"]["data"]
+        self.assertEqual("F", data["market"])
+        self.assertEqual("IF2609", data["stkcode"])
+        self.assertEqual("v1:20", client.calls[0]["payload"]["page"]["page_token"])
+        del future
+
     def test_formal_transport_does_not_fallback_to_mock_for_unavailable_tables(self) -> None:
         client = FallbackClient()
         client.transport = HpSocketTransport()

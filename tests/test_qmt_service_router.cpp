@@ -240,6 +240,7 @@ void test_quote_full_market_pagination_and_capacity() {
     assert(first_text.find("\"page\":1") != std::string::npos);
     assert(first_text.find("\"page_size\":1") != std::string::npos);
     assert(first_text.find("000001") != std::string::npos);
+    assert(first_text.find("\"asset_class\":\"stock\"") != std::string::npos);  // 全市场表格必须明确股票/期货类型，页面不能靠市场码猜测。
 
     const auto second = router.execute(task_for(
         12, R"({"schema_version":1,"request_id":"all-2","data":{},"page":{"page_size":1,"page_token":"v1:1","sort":"receive_time","descending":true}})"));

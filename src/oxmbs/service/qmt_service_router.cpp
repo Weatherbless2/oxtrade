@@ -544,6 +544,7 @@ std::string stock_quote_json(const storage::StockQuoteRecord& row) {
     return "{\"instrument_id\":" + json_string(row.market + ":" + row.stkcode) +
            ",\"market\":" + json_string(row.market) + ",\"stkcode\":" + json_string(row.stkcode) +
            ",\"name\":" + json_string(row.stkname) + ",\"last_price\":" + json_scalar(row.last_price) +
+           ",\"asset_class\":\"stock\"" +
            ",\"open_price\":" + json_scalar(row.open_price) + ",\"high_price\":" + json_scalar(row.high_price) +
            ",\"low_price\":" + json_scalar(row.low_price) + ",\"pre_close\":" + json_scalar(row.pre_close) +
            ",\"volume\":" + json_scalar(row.volume) + ",\"amount\":" + json_scalar(row.amount) +
@@ -557,6 +558,7 @@ std::string futures_quote_json(const storage::FuturesQuoteRecord& row) {
     return "{\"instrument_id\":" + json_string(row.market + ":" + row.stkcode) +
            ",\"market\":" + json_string(row.market) + ",\"stkcode\":" + json_string(row.stkcode) +
            ",\"name\":" + json_string(row.stkname) + ",\"last_price\":" + json_scalar(row.last_price) +
+           ",\"asset_class\":\"futures\"" +
            ",\"open_price\":" + json_scalar(row.open_price) + ",\"high_price\":" + json_scalar(row.high_price) +
            ",\"low_price\":" + json_scalar(row.low_price) + ",\"pre_close\":" + json_scalar(row.pre_close) +
            ",\"settlement\":" + json_scalar(row.settlement) + ",\"volume\":" + json_scalar(row.volume) +
