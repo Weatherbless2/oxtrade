@@ -77,6 +77,16 @@ if(UNIX)
 
     add_test(NAME oxmbs_qmt_service_router_test COMMAND oxmbs_qmt_service_router_test)
 
+    add_executable(oxmbs_lbm_qmt_test
+        test_lbm_qmt_module.cpp
+    )
+    target_link_libraries(oxmbs_lbm_qmt_test PRIVATE oxmbs_core)
+    target_compile_definitions(oxmbs_lbm_qmt_test PRIVATE
+        OXMBS_LBM_QMT_LIBRARY="$<TARGET_FILE:oxmbs_lbm_qmt>"
+    )
+    add_dependencies(oxmbs_lbm_qmt_test oxmbs_lbm_qmt)
+    add_test(NAME oxmbs_lbm_qmt_test COMMAND oxmbs_lbm_qmt_test)
+
     add_library(oxmbs_lbm_test_module SHARED
         lbm_test_module.cpp
     )

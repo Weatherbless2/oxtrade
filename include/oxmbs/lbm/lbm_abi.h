@@ -5,7 +5,7 @@
 
 namespace oxmbs::lbm {
 
-constexpr std::uint32_t kLbmAbiVersion{1};  // ABI 字段变化必须升级版本，旧模块不能被猜测性调用。
+constexpr std::uint32_t kLbmAbiVersion{2};  // ABI 字段变化必须升级版本，旧模块不能被猜测性调用。
 
 enum class LbmResponseCode : std::uint32_t {
     Ok = 0,
@@ -23,6 +23,7 @@ struct LbmRequestView {
     std::uint32_t func_id{0};  // 与 msg_type 组合定位导出函数，避免只按单字段误路由。
     const std::uint8_t* payload{nullptr};  // 指向 Worker 当前任务正文的借用指针，模块只能读。
     std::size_t payload_size{0};  // 正文精确字节数，不包含头部和 C 字符串结束符。
+    const void* host_context{nullptr};  // 仅借给模块读取 Worker 宿主提供的版本化业务端口，模块不得保存或释放该地址。
 };
 
 struct LbmResponseBuffer {

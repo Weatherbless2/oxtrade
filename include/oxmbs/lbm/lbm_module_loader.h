@@ -28,6 +28,7 @@ const char* lbm_module_status_name(LbmModuleStatus status) noexcept;
 struct LbmModuleLoaderOptions {
     std::size_t max_response_payload_bytes{
         ipc::TaskProtocolLimits{}.max_frame_bytes - ipc::IpcWireLayout::kHeaderBytes};  // 与运行时 MSGMAX 对齐，LBM 输出不会在 Response 编码阶段才溢出。
+    const void* host_context{nullptr};  // Worker 传给模块的只读宿主端口；Loader 不解释、不拥有，也不跨 Worker 共享可写状态。
 };
 
 struct LbmModuleResult {

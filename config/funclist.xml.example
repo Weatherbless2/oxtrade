@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 仅为路由格式示例；真实环境应替换为 Mentor 确认的消息枚举和部署后的 LBM 路径。 -->
+<!-- 第一阶段 QMT/PG 低频查询的生产路由。部署时把构建产物放到本文件相对的 lbm/lbm_qmt.so。 -->
 <funclist>
-    <function msg_type="9001" func_id="42" library="./lbm/lbm_sys.so" symbol="oxmbs_lbm_sys_execute" />
+    <function msg_type="2" func_id="1" library="./lbm/lbm_qmt.so" symbol="oxmbs_lbm_qmt_instrument_search" />
+    <function msg_type="2" func_id="2" library="./lbm/lbm_qmt.so" symbol="oxmbs_lbm_qmt_calendar_page" />
+    <function msg_type="2" func_id="3" library="./lbm/lbm_qmt.so" symbol="oxmbs_lbm_qmt_quote_latest" />
 </funclist>

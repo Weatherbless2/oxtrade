@@ -98,6 +98,7 @@ LbmModuleResult LbmModuleLoader::execute(const ipc::IpcTaskMsg& task) {
     request.func_id = task.func_id;
     request.payload = task.payload.data();  // 只借给 .so 读取当前任务正文，模块不能保存该地址到调用返回之后。
     request.payload_size = task.payload.size();  // 长度是正文字节数，不包含 C++ 容器或字符串结束符。
+    request.host_context = options_.host_context;  // 模块只借用 Worker 已准备好的业务端口，不自行创建数据库或复制连接池。
 
     LbmResponseBuffer response;
     response.payload = response_storage.data();  // 输出地址由 Worker 预先决定，模块只能写这块内存。

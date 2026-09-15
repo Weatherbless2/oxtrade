@@ -1,7 +1,7 @@
 # oxApp x oxMBS x QMT/PG 生产实施路线图
 
-> 版本：v1.2
-> 状态：`OX-P0-09` 已完成本地开发和验收，下一步为 `OX-P0-11`
+> 版本：v1.3
+> 状态：`OX-P0-11` 已完成本地开发和验收，下一步为 `OX-P0-12`
 > 规划基线：`b0984de`（原 `feature/33-oxapp-real-transport`）
 > 第一期范围：认证、低频 QMT/PG 查询、真实行情浏览、实时行情 Push 和运行保障；不包含交易、不启用 TLS。
 
@@ -18,7 +18,7 @@
 | QMT 到 PG 数据底座 | `PARTIAL` | `ta_data` 有市场、日历、主数据、IPO、股票/期货最新行情；正常实时采集已验证 | 重连、重启、重复、陈旧、跨交易日稳定性尚未验收 |
 | 低频真实查询 | `PASS` | Qt -> HP-Socket -> Worker -> PG -> ReplyCollector -> Qt 返回真实数据 | 只验证了少量查询，不是完整行情浏览 |
 | 登录和权限 | `PARTIAL` | 有 `AuthService` 的 challenge、会话与权限内核 | 未接入网络路由、真实凭据、Token 续期和登录页 |
-| LBM | `PARTIAL` | Worker 已进入 `LbmTaskDispatcher`，具备 XML 动态库优先和三个冻结 QMT 路由的精确迁移桥接 | 正式 `lbm_qmt.so` 仍未实现，当前桥接不能视为正式模块 |
+| LBM | `PASS` | `lbm_qmt.so` 已实现标的、日历和最新行情三条 XML 正式路由；模块经 Worker 私有 Repository 查询 PG | 模块部署产物需随运行配置发布；其他领域 LBM 不在本期范围 |
 | Qt 行情页 | `PARTIAL` | 正式模式已携带分页、排序和游标请求 | `OX-P0-11/12` 完成前不能宣称正式 LBM 和全量工作台验收 |
 | 实时行情 Push | `PLANNED` | 有 `oxMWH`、MarketWire 和工单设计 | 尚未接入 QMT 回调并推给正式 Qt 客户端 |
 
@@ -98,7 +98,7 @@ flowchart LR
 | ---: | --- | --- | --- | --- |
 | 1 | `OX-P0-10` 响应容量与分页协议 | `feature/36-oxmbs-response-capacity` | 运行时 MSGMAX、服务端分页、全市场股票/期货合并查询 | 19 项 CTest 与 13 项相关 Python 测试通过 |
 | 2 | `OX-P0-09` LBM 生产运行时接线 | `feature/35-oxmbs-lbm-runtime` | 让正式 Worker 经过 `LbmTaskDispatcher` | 本地完成；XML 路由优先，QMT 迁移桥接仅限三个冻结接口 |
-| 3 | `OX-P0-11` `lbm_qmt.so` | `feature/37-lbm-qmt` | 标的、日历、行情都经正式 LBM | `funclist.xml -> lbm_qmt.so -> Repository` |
+| 3 | `OX-P0-11` `lbm_qmt.so` | `feature/37-lbm-qmt` | 标的、日历、行情都经正式 LBM | 本地完成；`funclist.xml -> lbm_qmt.so -> Repository` |
 | 4 | `OX-P0-12` 全量 QMT/PG 行情工作台 | `feature/38-oxapp-qmt-workbench` | 全市场、股票/期货、筛选、分页、来源/新鲜度 | Qt 页面看到多页真实数据，无 Mock 回退 |
 | 5 | `OX-P1-01` 实时订阅与 Push | `feature/39-oxmbs-qmt-market-push` | 订阅、取消、序号、断档恢复、慢客户端处理 | 多个用户只收到各自订阅的行情 |
 | 6 | `OX-P1-02` QMT 稳定性验收 | `feature/40-qmt-realtime-acceptance` | 重连、重启、去重、陈旧、交易日切换 | 每种故障有数据库和恢复证据 |
@@ -161,4 +161,4 @@ LBM 不拥有 Socket、IPC 队列、ReplyCollector 或 Session 映射，也不�
 
 ## 8. 下一步
 
-下一张应实施的工单是 **`OX-P0-11` `lbm_qmt.so` 正式模块**。当前 Worker 已经经过 `LbmTaskDispatcher`，接下来要把三个冻结 QMT 查询从迁移桥接迁入 XML 配置的正式动态模块，随后进入 `OX-P0-12` 全量工作台。`OX-P0-05A` 保留为独立认证能力，不插入当前真实数据竖切顺序。
+下一张应实施的工单是 **`OX-P0-12` 全量 QMT/PG 行情工作台**。当前三个冻结查询已经进入 XML 配置的正式 `lbm_qmt.so`，接下来把真实多页股票和期货行情呈现在 Qt 页面，明确展示数据来源和新鲜度，且不回退为 Mock。`OX-P0-05A` 保留为独立认证能力，不插入当前真实数据竖切顺序。

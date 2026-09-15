@@ -36,6 +36,7 @@ add_library(oxmbs_core
     src/oxmbs/market/market_wire_broadcaster.cpp
     src/oxmbs/auth/auth_service.cpp
     src/oxmbs/service/qmt_service_router.cpp
+    src/oxmbs/service/qmt_repository_adapter.cpp
 )
 
 if(UNIX)
@@ -122,6 +123,18 @@ add_executable(oxMbsBootstrap
 target_link_libraries(oxMbsBootstrap PRIVATE oxmbs_core oxapp_core)
 
 if(UNIX)
+    add_library(oxmbs_lbm_qmt SHARED
+        src/oxmbs/lbm/lbm_qmt_module.cpp
+        src/oxmbs/ipc/task_protocol.cpp
+        src/oxmbs/service/qmt_service_router.cpp
+    )
+    target_include_directories(oxmbs_lbm_qmt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_features(oxmbs_lbm_qmt PRIVATE cxx_std_17)
+    target_compile_options(oxmbs_lbm_qmt PRIVATE -Wall -Wextra -Wpedantic)
+    target_link_libraries(oxmbs_lbm_qmt PRIVATE PostgreSQL::PostgreSQL)  # 模块独立编译也必须显式获得 QmtRepository 端口所需的 libpq 头文件与链接边界。
+    set_target_properties(oxmbs_lbm_qmt PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lbm")  # 部署时复制到 funclist.xml 相对 lbm/ 目录，XML 不绑定构建路径。
+
     # 仅 #24 本地联调使用：动态库保留 #8 的真实 dlopen/dlsym 边界，不承担 #11-#13 正式业务职责。
     add_library(oxmbs_mock_lbm SHARED
         src/oxmbs/mock/mock_lbm.cpp

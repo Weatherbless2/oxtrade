@@ -2,6 +2,7 @@
 #include "oxmbs/ipc/ipc_queue_manager.h"
 #include "oxmbs/logging/run_logger.h"
 #include "oxmbs/lbm/lbm_task_dispatcher.h"
+#include "oxmbs/lbm/qmt_lbm_host.h"
 #include "oxmbs/network/hp_socket_bridge.h"
 #include "oxmbs/network/hp_socket_server.h"
 #include "oxmbs/runtime/system_info.h"
@@ -161,7 +162,25 @@ int main(int argc, char** argv) {
     database_probe.close();  // 只验证当前运行环境可连接；真正业务连接在每个 Worker fork 后独立建立。
     logger.info("PostgreSQL preflight passed; worker connections will open after fork");
 
-    oxmbs::lbm::LbmTaskDispatcher lbm_dispatcher;  // 主进程创建 Loader；fork 后 Worker 继承已校验路由但按需加载库。
+    oxmbs::storage::QmtRepository qmt_repository(database_pool);
+    oxmbs::service::QmtRepositoryAdapter qmt_repository_adapter(qmt_repository);
+    oxmbs::service::QmtServiceRouterOptions qmt_options;
+    qmt_options.max_page_size = 50;  // 正式客户端默认页大小为 20，服务端封顶 50，避免单次 QMT 回包接近 IPC 上限。
+    qmt_options.routes = {
+        {2, 1, oxmbs::service::QmtOperation::InstrumentSearch},
+        {2, 2, oxmbs::service::QmtOperation::CalendarPage},
+        {2, 3, oxmbs::service::QmtOperation::QuoteLatest},
+    };
+    oxmbs::service::QmtServiceRouter qmt_service(qmt_repository_adapter, qmt_options);
+    oxmbs::lbm::QmtLbmHostContext qmt_lbm_host;
+    qmt_lbm_host.repository = &qmt_repository_adapter;  // Worker fork 后模块只借用抽象 Repository，不拥有 libpq 连接或连接池。
+    qmt_lbm_host.max_page_size = qmt_options.max_page_size;
+    qmt_lbm_host.max_instrument_count = qmt_options.max_instrument_count;
+    qmt_lbm_host.max_response_payload_bytes = qmt_options.max_response_payload_bytes;
+    qmt_lbm_host.require_authenticated_session = qmt_options.require_authenticated_session;
+    oxmbs::lbm::LbmModuleLoaderOptions lbm_options;
+    lbm_options.host_context = &qmt_lbm_host;
+    oxmbs::lbm::LbmTaskDispatcher lbm_dispatcher(lbm_options);  // 主进程只准备只读宿主端口；fork 后 Worker 按需加载正式 .so。
     const auto funclist_result = lbm_dispatcher.load_funclist(config.funclist_path);  // 启动期先保证 XML 可用，再允许任务进入。
     if (!funclist_result) {
         logger.error("cannot load LBM funclist: status=" +
@@ -179,16 +198,6 @@ int main(int argc, char** argv) {
     }
 
     oxmbs::ipc::TaskCorrelationRegistry correlation_registry;
-    oxmbs::storage::QmtRepository qmt_repository(database_pool);
-    oxmbs::service::QmtRepositoryAdapter qmt_repository_adapter(qmt_repository);
-    oxmbs::service::QmtServiceRouterOptions qmt_options;
-    qmt_options.max_page_size = 50;  // 正式客户端默认页大小为 20，服务端封顶 50，避免单次 QMT 回包接近 IPC 上限。
-    qmt_options.routes = {
-        {2, 1, oxmbs::service::QmtOperation::InstrumentSearch},
-        {2, 2, oxmbs::service::QmtOperation::CalendarPage},
-        {2, 3, oxmbs::service::QmtOperation::QuoteLatest},
-    };
-    oxmbs::service::QmtServiceRouter qmt_service(qmt_repository_adapter, qmt_options);
     // OX-P0-11 前只桥接已冻结的三个 QMT 查询；其他编号必须由 XML 正式路由或被明确拒绝。
     lbm_dispatcher.register_builtin_route(2, 1, &oxmbs::service::QmtServiceRouter::handle, &qmt_service);
     lbm_dispatcher.register_builtin_route(2, 2, &oxmbs::service::QmtServiceRouter::handle, &qmt_service);
