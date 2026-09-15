@@ -81,6 +81,21 @@ oxmbs::ipc::IpcQueueOptions queue_options() {
     return options;
 }
 
+struct BuiltinInvocation {
+    int call_count{0};
+};
+
+oxmbs::worker::QueryExecutionResult builtin_handler(const oxmbs::ipc::IpcTaskMsg&, void* context) {
+    auto* invocation = static_cast<BuiltinInvocation*>(context);
+    assert(invocation != nullptr);  // 测试显式传入上下文，证明 Dispatcher 不会生成或猜测业务对象。
+    ++invocation->call_count;
+    oxmbs::worker::QueryExecutionResult result;
+    result.status = oxmbs::ipc::IpcResponseStatus::Ok;
+    constexpr char kPayload[] = "builtin-bridge";
+    result.payload.assign(kPayload, kPayload + sizeof(kPayload) - 1);
+    return result;
+}
+
 oxmbs::worker::QueryWorkerRuntimeOptions worker_options() {
     oxmbs::worker::QueryWorkerRuntimeOptions options;
     options.protocol_limits.max_frame_bytes = 4096;
@@ -166,6 +181,44 @@ void test_loader_lazily_caches_modules_and_reports_failures() {
     std::filesystem::remove_all(directory);
 }
 
+void test_dispatcher_prefers_xml_and_only_uses_explicit_builtin_routes() {
+    const auto directory = temporary_directory("dispatcher");
+    const auto funclist = write_valid_funclist(directory);
+    oxmbs::lbm::LbmTaskDispatcher dispatcher;
+    BuiltinInvocation invocation;
+
+    dispatcher.register_builtin_route(kMessageType, 46, &builtin_handler, &invocation);
+    assert(dispatcher.builtin_route_count() == 1);  // 迁移桥接必须是逐个二元键登记，不能覆盖所有未配置请求。
+    std::string error;
+    assert(!dispatcher.initialize_worker(error));  // funclist 未加载前，即使有桥接也不允许启动 Worker。
+    assert(!error.empty());
+    const auto before_configuration = dispatcher.execute(make_task(46));
+    assert(before_configuration.status == oxmbs::ipc::IpcResponseStatus::Failed);
+    assert(invocation.call_count == 0);  // 启动顺序错误时不能绕过 XML 配置门禁直接调用业务 Service。
+
+    assert(dispatcher.load_funclist(funclist));
+    assert(dispatcher.initialize_worker(error));
+    assert(error.empty());
+    assert(dispatcher.loader().route_configured(kMessageType, 41));
+    assert(!dispatcher.loader().route_configured(kMessageType, 46));
+
+    const auto bridged = dispatcher.execute(make_task(46));
+    assert(bridged.status == oxmbs::ipc::IpcResponseStatus::Ok);
+    assert(std::string(bridged.payload.begin(), bridged.payload.end()) == "builtin-bridge");
+    assert(invocation.call_count == 1);
+
+    const auto unregistered = dispatcher.execute(make_task(99));
+    assert(unregistered.status == oxmbs::ipc::IpcResponseStatus::Rejected);
+    assert(invocation.call_count == 1);  // 未登记路由仍拒绝，不能被 bridge 误接收。
+
+    dispatcher.register_builtin_route(kMessageType, 41, &builtin_handler, &invocation);
+    const auto xml_route = dispatcher.execute(make_task(41));
+    assert(xml_route.status == oxmbs::ipc::IpcResponseStatus::Ok);
+    assert(std::string(xml_route.payload.begin(), xml_route.payload.end()) == "mock-lbm-ok");
+    assert(invocation.call_count == 1);  // XML 正式路由优先，未来 lbm_qmt.so 上线后同键桥接不会生效。
+    std::filesystem::remove_all(directory);
+}
+
 void test_supervised_worker_dispatches_to_lbm_and_writes_response() {
     const auto directory = temporary_directory("worker");
     const auto funclist = write_valid_funclist(directory);
@@ -202,6 +255,7 @@ void test_supervised_worker_dispatches_to_lbm_and_writes_response() {
 int main() {
     test_registry_validates_and_preserves_last_good_mapping();
     test_loader_lazily_caches_modules_and_reports_failures();
+    test_dispatcher_prefers_xml_and_only_uses_explicit_builtin_routes();
     test_supervised_worker_dispatches_to_lbm_and_writes_response();
     return 0;
 }

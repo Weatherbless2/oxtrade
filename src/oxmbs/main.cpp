@@ -70,6 +70,31 @@ bool open_worker_database(void* context, std::string& error) {
     return true;
 }
 
+struct WorkerRuntimeStartContext {
+    oxmbs::lbm::LbmTaskDispatcher* dispatcher{nullptr};
+    oxmbs::storage::PostgresConnectionPool* database_pool{nullptr};
+};
+
+bool initialize_worker_runtime(void* context, std::string& error) {
+    if (context == nullptr) {
+        error = "worker runtime start context is null";
+        return false;
+    }
+    auto* start = static_cast<WorkerRuntimeStartContext*>(context);
+    if (start->database_pool == nullptr || start->dispatcher == nullptr) {
+        error = "worker runtime start context is incomplete";
+        return false;
+    }
+    if (!open_worker_database(start->database_pool, error)) {
+        return false;  // 每个 fork 后的 Worker 打开自己的 libpq 连接池，父进程不把连接句柄复制进子进程。
+    }
+    if (!start->dispatcher->initialize_worker(error)) {
+        start->database_pool->close();  // LBM 启动边界失败时立即释放本 Worker 已建立的数据库资源。
+        return false;
+    }
+    return true;  // Worker 通过 Dispatcher 进入消费循环；正式 .so 仍按首个任务懒加载。
+}
+
 void load_database_conninfo_from_environment(oxmbs::storage::PostgresPoolOptions& options) {
     const char* conninfo = std::getenv("OXMBS_DATABASE_URL");
     if (conninfo == nullptr || *conninfo == '\0') {
@@ -164,10 +189,15 @@ int main(int argc, char** argv) {
         {2, 3, oxmbs::service::QmtOperation::QuoteLatest},
     };
     oxmbs::service::QmtServiceRouter qmt_service(qmt_repository_adapter, qmt_options);
-    oxmbs::worker::QueryWorkerRuntime worker_runtime(  // Worker 收到任务后才经 Dispatcher 首次触发 dlopen/dlsym。
+    // OX-P0-11 前只桥接已冻结的三个 QMT 查询；其他编号必须由 XML 正式路由或被明确拒绝。
+    lbm_dispatcher.register_builtin_route(2, 1, &oxmbs::service::QmtServiceRouter::handle, &qmt_service);
+    lbm_dispatcher.register_builtin_route(2, 2, &oxmbs::service::QmtServiceRouter::handle, &qmt_service);
+    lbm_dispatcher.register_builtin_route(2, 3, &oxmbs::service::QmtServiceRouter::handle, &qmt_service);
+    WorkerRuntimeStartContext worker_start_context{&lbm_dispatcher, &database_pool};
+    oxmbs::worker::QueryWorkerRuntime worker_runtime(
         queue_manager.request_queue(), queue_manager.reply_queue(), {},
-        &oxmbs::service::QmtServiceRouter::handle, &qmt_service, &logger,
-        &open_worker_database, &database_pool);  // QMT Service 在 Worker 内执行，连接池也在 fork 后独立打开。
+        &oxmbs::lbm::LbmTaskDispatcher::handle, &lbm_dispatcher, &logger,
+        &initialize_worker_runtime, &worker_start_context);  // Worker 统一经 Dispatcher；其 fork 副本自行打开 PG 连接并复用 Service 桥接。
     oxapp::process::WorkerSupervisor supervisor(
         config.query_worker_count, &oxmbs::worker::query_worker_runtime_entry, &worker_runtime);
     if (!supervisor.start()) {  // fork/启动失败时不能留下已经创建的 System V 队列。

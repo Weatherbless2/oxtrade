@@ -132,6 +132,10 @@ bool LbmModuleLoader::configuration_loaded() const noexcept {
     return configuration_loaded_;
 }
 
+bool LbmModuleLoader::route_configured(std::uint32_t msg_type, std::uint32_t func_id) const noexcept {
+    return registry_.find(msg_type, func_id) != nullptr;  // Dispatcher 用它区分正式 XML 路由和迁移期内置桥接，正式模块优先。
+}
+
 std::size_t LbmModuleLoader::configured_route_count() const noexcept {
     return registry_.size();
 }

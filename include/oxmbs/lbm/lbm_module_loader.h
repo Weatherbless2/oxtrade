@@ -50,6 +50,7 @@ public:
     LbmModuleResult execute(const ipc::IpcTaskMsg& task);  // 任务命中路由后懒加载库、调用函数，再复制出 Worker 自有结果。
 
     bool configuration_loaded() const noexcept;
+    bool route_configured(std::uint32_t msg_type, std::uint32_t func_id) const noexcept;
     std::size_t configured_route_count() const noexcept;
     std::size_t loaded_library_count() const;
     std::size_t cached_function_count() const;

@@ -1,13 +1,13 @@
 # oxApp x oxMBS x QMT/PG 生产实施路线图
 
-> 版本：v1.1
-> 状态：`OX-P0-10` 已完成本地开发和验收，下一步为 `OX-P0-09`
+> 版本：v1.2
+> 状态：`OX-P0-09` 已完成本地开发和验收，下一步为 `OX-P0-11`
 > 规划基线：`b0984de`（原 `feature/33-oxapp-real-transport`）
 > 第一期范围：认证、低频 QMT/PG 查询、真实行情浏览、实时行情 Push 和运行保障；不包含交易、不启用 TLS。
 
 ## 1. 用一句话说清当前进度
 
-现在已经打通了一条**低频真实查询**：Qt 客户端通过 C++ HP-Socket、System V IPC、Query Worker 和 PostgreSQL `ta_data`，可以显示 `source=QMT/PG` 的真实行情。它证明“前端能查到真实 QMT 入库数据”，但还不是可以上线的全量行情系统。
+现在已经打通了一条**经过 LBM Dispatcher 的低频真实查询**：Qt 客户端通过 C++ HP-Socket、System V IPC、Query Worker、LBM 调度器和 PostgreSQL `ta_data`，可以显示 `source=QMT/PG` 的真实行情。它证明“前端能查到真实 QMT 入库数据”，但还不是可以上线的全量行情系统。
 
 当前仍缺少正式 LBM 执行、真实数据端到端联调、全量工作台验收和实时推送。因此不能把当前分页代码或单标的查询截图当作“实时行情已经完成”或“生产联调已经验收”。第一期认证工单不再插入当前真实数据竖切路线，交易和 TLS 仍不包含。
 
@@ -18,7 +18,7 @@
 | QMT 到 PG 数据底座 | `PARTIAL` | `ta_data` 有市场、日历、主数据、IPO、股票/期货最新行情；正常实时采集已验证 | 重连、重启、重复、陈旧、跨交易日稳定性尚未验收 |
 | 低频真实查询 | `PASS` | Qt -> HP-Socket -> Worker -> PG -> ReplyCollector -> Qt 返回真实数据 | 只验证了少量查询，不是完整行情浏览 |
 | 登录和权限 | `PARTIAL` | 有 `AuthService` 的 challenge、会话与权限内核 | 未接入网络路由、真实凭据、Token 续期和登录页 |
-| LBM | `PARTIAL` | 有 `funclist.xml`、动态库加载、C ABI 和 Mock 调度 | 正式 QMT 请求仍直接调用 `QmtServiceRouter::handle` |
+| LBM | `PARTIAL` | Worker 已进入 `LbmTaskDispatcher`，具备 XML 动态库优先和三个冻结 QMT 路由的精确迁移桥接 | 正式 `lbm_qmt.so` 仍未实现，当前桥接不能视为正式模块 |
 | Qt 行情页 | `PARTIAL` | 正式模式已携带分页、排序和游标请求 | `OX-P0-11/12` 完成前不能宣称正式 LBM 和全量工作台验收 |
 | 实时行情 Push | `PLANNED` | 有 `oxMWH`、MarketWire 和工单设计 | 尚未接入 QMT 回调并推给正式 Qt 客户端 |
 
@@ -97,7 +97,7 @@ flowchart LR
 | 顺序 | 工单 | 建议实施分支 | 目标 | 完成标志 |
 | ---: | --- | --- | --- | --- |
 | 1 | `OX-P0-10` 响应容量与分页协议 | `feature/36-oxmbs-response-capacity` | 运行时 MSGMAX、服务端分页、全市场股票/期货合并查询 | 19 项 CTest 与 13 项相关 Python 测试通过 |
-| 2 | `OX-P0-09` LBM 生产运行时接线 | `feature/35-oxmbs-lbm-runtime` | 让正式 Worker 经过 `LbmTaskDispatcher` | 不再直接绑定 `QmtServiceRouter::handle` |
+| 2 | `OX-P0-09` LBM 生产运行时接线 | `feature/35-oxmbs-lbm-runtime` | 让正式 Worker 经过 `LbmTaskDispatcher` | 本地完成；XML 路由优先，QMT 迁移桥接仅限三个冻结接口 |
 | 3 | `OX-P0-11` `lbm_qmt.so` | `feature/37-lbm-qmt` | 标的、日历、行情都经正式 LBM | `funclist.xml -> lbm_qmt.so -> Repository` |
 | 4 | `OX-P0-12` 全量 QMT/PG 行情工作台 | `feature/38-oxapp-qmt-workbench` | 全市场、股票/期货、筛选、分页、来源/新鲜度 | Qt 页面看到多页真实数据，无 Mock 回退 |
 | 5 | `OX-P1-01` 实时订阅与 Push | `feature/39-oxmbs-qmt-market-push` | 订阅、取消、序号、断档恢复、慢客户端处理 | 多个用户只收到各自订阅的行情 |
@@ -161,4 +161,4 @@ LBM 不拥有 Socket、IPC 队列、ReplyCollector 或 Session 映射，也不�
 
 ## 8. 下一步
 
-下一张应实施的工单是 **`OX-P0-09` LBM 生产运行时接线**。当前 `OX-P0-10` 已完成协议容量和分页边界，接下来要让正式 Worker 经过 `LbmTaskDispatcher`，再进入 `OX-P0-11` 的 `lbm_qmt.so` 和 `OX-P0-12` 全量工作台。`OX-P0-05A` 保留为独立认证能力，不插入当前真实数据竖切顺序。
+下一张应实施的工单是 **`OX-P0-11` `lbm_qmt.so` 正式模块**。当前 Worker 已经经过 `LbmTaskDispatcher`，接下来要把三个冻结 QMT 查询从迁移桥接迁入 XML 配置的正式动态模块，随后进入 `OX-P0-12` 全量工作台。`OX-P0-05A` 保留为独立认证能力，不插入当前真实数据竖切顺序。
