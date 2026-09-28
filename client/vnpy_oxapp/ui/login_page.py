@@ -127,7 +127,7 @@ if PYSIDE_AVAILABLE:
                 if text == "—":
                     tool.clicked.connect(lambda: self.window().showMinimized())
                 elif text == "□":
-                    tool.clicked.connect(self.maximize_requested)
+                    tool.clicked.connect(lambda _checked=False: self.maximize_requested.emit())
                     self._maximize_button = tool
                 elif text == "×":
                     tool.clicked.connect(lambda: self.window().close())

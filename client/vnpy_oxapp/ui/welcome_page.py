@@ -152,7 +152,7 @@ if PYSIDE_AVAILABLE:
             select.clicked.connect(self._focus_products)
             refresh = QPushButton("刷新工作区")
             refresh.setObjectName("secondaryButton")
-            refresh.clicked.connect(self.refresh_requested)
+            refresh.clicked.connect(lambda _checked=False: self.refresh_requested.emit())
             toolbar.addWidget(select)
             toolbar.addWidget(refresh)
             toolbar.addStretch(1)
@@ -193,7 +193,7 @@ if PYSIDE_AVAILABLE:
             if product_head is not None:
                 add = QPushButton("+ 添加")
                 add.setObjectName("smallButton")
-                add.clicked.connect(self.add_product_requested)
+                add.clicked.connect(lambda _checked=False: self.add_product_requested.emit())
                 product_head.layout().addWidget(add)
             self._products_list = QListWidget()
             self._products_list.setObjectName("productList")

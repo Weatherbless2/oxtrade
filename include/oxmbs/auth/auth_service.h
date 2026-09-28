@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <string_view>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -56,6 +57,8 @@ struct AuthLoginResponse {
     explicit operator bool() const noexcept { return status == AuthStatus::Ok; }
 };
 
+using AuthRefreshResponse = AuthLoginResponse;
+
 struct SessionSnapshot {
     std::uint64_t session_id{0};
     std::string username;
@@ -83,6 +86,8 @@ public:
 
     AuthChallengeResponse issue_challenge(const AuthChallengeRequest& request);
     AuthLoginResponse login(const AuthLoginRequest& request);
+    AuthRefreshResponse refresh(std::uint64_t session_id,
+                                const std::string& access_token);
 
     AuthStatus logout(std::uint64_t session_id, const std::string& access_token, std::string& error);
     AuthStatus disconnect(std::uint64_t session_id, std::string& error);
@@ -92,6 +97,10 @@ public:
                          const std::string& access_token,
                          const std::string& permission,
                          std::string& error) const;
+    // 网络层在确认 connection_id -> session_id 后使用；Token 只在登录、刷新和注销阶段出现。
+    AuthStatus authorize_bound_session(std::uint64_t session_id,
+                                       const std::string& permission,
+                                       std::string& error) const;
     bool snapshot(std::uint64_t session_id, SessionSnapshot& result, std::string& error) const;
     std::size_t active_session_count() const noexcept;
 

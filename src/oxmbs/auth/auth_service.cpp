@@ -140,6 +140,38 @@ AuthLoginResponse AuthService::login(const AuthLoginRequest& request) {
     return response;
 }
 
+AuthRefreshResponse AuthService::refresh(std::uint64_t session_id,
+                                         const std::string& access_token) {
+    AuthRefreshResponse response;
+    std::lock_guard lock(mutex_);
+    const auto iterator = sessions_.find(session_id);
+    if (iterator == sessions_.end()) {
+        response.status = AuthStatus::SessionNotFound;
+        response.error = "session was not found";
+        return response;
+    }
+    if (iterator->second.snapshot.expires_at <= Clock::now()) {
+        response.status = AuthStatus::SessionExpired;
+        response.error = "session has expired";
+        return response;
+    }
+    if (!constant_time_equal(iterator->second.snapshot.access_token, access_token)) {
+        response.status = AuthStatus::SessionNotFound;
+        response.error = "session token is invalid";
+        return response;
+    }
+
+    const auto now = Clock::now();
+    iterator->second.snapshot.access_token = random_token(32);
+    iterator->second.snapshot.expires_at = now + options_.session_ttl;
+    response.status = AuthStatus::Ok;
+    response.session_id = session_id;
+    response.access_token = iterator->second.snapshot.access_token;
+    response.expires_at = iterator->second.snapshot.expires_at;
+    response.permissions = iterator->second.snapshot.permissions;
+    return response;
+}
+
 AuthStatus AuthService::logout(std::uint64_t session_id,
                                const std::string& access_token,
                                std::string& error) {
@@ -199,6 +231,31 @@ AuthStatus AuthService::authorize(std::uint64_t session_id,
         return status;
     }
     if (!contains_permission(session->snapshot.permissions, permission)) {
+        error = "permission denied";
+        return AuthStatus::PermissionDenied;
+    }
+    error.clear();
+    return AuthStatus::Ok;
+}
+
+AuthStatus AuthService::authorize_bound_session(std::uint64_t session_id,
+                                                const std::string& permission,
+                                                std::string& error) const {
+    if (!non_empty(permission)) {
+        error = "permission is required";
+        return AuthStatus::InvalidArgument;
+    }
+    std::lock_guard lock(mutex_);
+    const auto iterator = sessions_.find(session_id);
+    if (iterator == sessions_.end()) {
+        error = "session was not found";
+        return AuthStatus::SessionNotFound;
+    }
+    if (iterator->second.snapshot.expires_at <= Clock::now()) {
+        error = "session has expired";
+        return AuthStatus::SessionExpired;
+    }
+    if (!contains_permission(iterator->second.snapshot.permissions, permission)) {
         error = "permission denied";
         return AuthStatus::PermissionDenied;
     }

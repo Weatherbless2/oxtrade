@@ -1,5 +1,6 @@
 #pragma once
 
+#include "oxmbs/auth/auth_service.h"
 #include "oxmbs/network/hp_socket_server.h"
 #include "oxmbs/routing/workfunc_router.h"
 #include "oxmbs/worker/reply_collector.h"
@@ -21,6 +22,7 @@ public:
                    logging::RunLogger* logger = nullptr) noexcept;
 
     void attach_server(HpSocketServer& server) noexcept;
+    void attach_auth_service(auth::AuthService& service) noexcept;
 
     static void on_frame(ConnectionId connection_id,
                          const PackMessage& message,
@@ -33,12 +35,22 @@ public:
 
 private:
     void handle_frame(ConnectionId connection_id, const PackMessage& message);
+    void handle_auth_frame(ConnectionId connection_id, const PackMessage& message);
     void handle_response(const ipc::IpcRespMsg& response);
     void handle_timeout(const ipc::ExpiredTask& task);
-    void send_error(const PackMessage& request,
+    void send_error(ConnectionId connection_id,
+                    const PackMessage& request,
                     std::uint64_t session_id,
                     PackMessageErrorCode code,
                     const std::string& message);
+    void send_auth_response(ConnectionId connection_id,
+                            const PackMessage& request,
+                            std::uint64_t session_id,
+                            PackMessageErrorCode code,
+                            const std::string& data,
+                            const std::string& message = {});
+    static PackMessageErrorCode auth_error(auth::AuthStatus status) noexcept;
+    static const char* required_permission(const PackMessage& request) noexcept;
     static PackMessageErrorCode route_error(routing::WorkFuncRouteStatus status) noexcept;
     static PackMessage make_response(const ipc::IpcRespMsg& response);
     static PackMessage make_timeout_response(const ipc::ExpiredTask& task);
@@ -47,6 +59,7 @@ private:
 
     HpSocketServer* server_{nullptr};
     routing::WorkFuncRouter* router_{nullptr};
+    auth::AuthService* auth_service_{nullptr};
     logging::RunLogger* logger_{nullptr};
 };
 

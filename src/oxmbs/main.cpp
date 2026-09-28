@@ -1,4 +1,6 @@
 #include "oxmbs/config/mbs_config.h"
+#include "oxmbs/auth/auth_credential_store.h"
+#include "oxmbs/auth/auth_service.h"
 #include "oxmbs/ipc/ipc_queue_manager.h"
 #include "oxmbs/logging/run_logger.h"
 #include "oxmbs/lbm/lbm_task_dispatcher.h"
@@ -149,6 +151,28 @@ int main(int argc, char** argv) {
     logger.info("disk_total_bytes=" + std::to_string(system_info.disk_total_bytes) +
                 ", disk_available_bytes=" + std::to_string(system_info.disk_available_bytes));
 
+    oxmbs::auth::EnvironmentCredentialStore credential_store;
+    if (!credential_store.load_from_environment("OXMBS_AUTH_USERS", error)) {
+        logger.error("authentication credential configuration error: " + error);
+        return 1;
+    }
+    if (credential_store.empty()) {
+        logger.warn("OXMBS_AUTH_USERS is not configured; all login attempts will be rejected");
+    }
+    oxmbs::auth::AuthServiceOptions auth_options;
+    auth_options.verify_credential = [&credential_store](const std::string& username,
+                                                          const std::string& challenge_id,
+                                                          const std::string& client_nonce,
+                                                          const std::string& server_nonce,
+                                                          const std::string& password_proof) {
+        return credential_store.verify_credential(username, challenge_id, client_nonce,
+                                                  server_nonce, password_proof);
+    };
+    auth_options.resolve_permissions = [&credential_store](const std::string& username) {
+        return credential_store.resolve_permissions(username);
+    };
+    oxmbs::auth::AuthService auth_service(auth_options);  // 会话状态只存在主进程，Worker 不接触网络认证对象。
+
     oxmbs::storage::PostgresPoolOptions database_options;
     load_database_conninfo_from_environment(database_options);
     oxmbs::storage::PostgresConnectionPool database_pool(database_options);  // fork 前保持 closed，避免复制 libpq 连接句柄。
@@ -221,6 +245,7 @@ int main(int argc, char** argv) {
         oxmbs::routing::MessageRoutePolicy(std::unordered_set<std::uint32_t>{2}),
         {}, &logger);
     oxmbs::network::HpSocketBridge network_bridge(nullptr, workfunc_router, &logger);
+    network_bridge.attach_auth_service(auth_service);
     oxmbs::worker::ReplyCollector reply_collector(
         queue_manager.reply_queue(), correlation_registry, {},
         &oxmbs::network::HpSocketBridge::on_response, &network_bridge,
@@ -261,6 +286,7 @@ int main(int argc, char** argv) {
     while (stop_requested == 0) {
         supervisor.monitor_once();  // #2 非阻塞巡检并按需重启异常 Worker。
         reply_collector.expire_pending();  // #5 steady_clock 超时由主进程统一清理；未来可将 snapshot 交给 HP-Socket 超时回包。
+        auth_service.expire_sessions();  // 主进程定期清理过期 Token，避免长期运行积累失效会话。
         if (reply_collector_exit_code.load(std::memory_order_acquire) != -1) {
             logger.error("reply collector stopped unexpectedly");
             exit_code = 1;

@@ -176,6 +176,8 @@ class HpSocketTransport(IClientTransport):
                 self._heartbeat_thread = None
                 self._reconnect_thread = None
                 self._decoder.clear()
+                self._session_wire_ids.clear()
+                self._heartbeat_session_wire_id = 0
             self._set_state(ConnectionState.DISCONNECTED, "HP-Socket disconnected")
 
     def send(self, request: ClientRequest) -> bool:
@@ -317,6 +319,8 @@ class HpSocketTransport(IClientTransport):
                 return
             self._socket = None
             self._decoder.clear()
+            self._session_wire_ids.clear()  # 断线后的新连接不得复用旧连接的 Session 映射。
+            self._heartbeat_session_wire_id = 0
             should_reconnect = (
                 not self._manual_disconnect
                 and not self._stop_event.is_set()
@@ -470,7 +474,7 @@ class HpSocketTransport(IClientTransport):
     def _status_from_error(error_code: int) -> tuple[MessageStatus, ErrorCode]:
         if error_code in (0, 2002):
             return MessageStatus.SUCCEEDED, ErrorCode.NONE
-        if error_code in (1101, 1103, 1104, 1105):
+        if error_code in (1101, 1102, 1103, 1104, 1105):
             return MessageStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED
         if error_code == 1202:
             return MessageStatus.TIMED_OUT, ErrorCode.TIMEOUT

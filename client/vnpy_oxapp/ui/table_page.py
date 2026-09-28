@@ -66,15 +66,17 @@ if PYSIDE_AVAILABLE:
         update_requested = Signal(str, dict)
         transition_requested = Signal(str, str)
         delete_requested = Signal(str)
+        row_selected = Signal(dict)
 
-        def __init__(self, spec: TableSpec, parent: QWidget | None = None) -> None:
+        def __init__(self, spec: TableSpec, page_size: int = 20, parent: QWidget | None = None, compact_rows: bool = False) -> None:
             super().__init__(parent)
             self.columns = spec.columns
             self._primary_key = spec.primary_key
             self._editable_fields = spec.editable_fields
             self._rows: list[dict[str, Any]] = []  # 表格只保存最近一次后端快照，用于定位选中行，不能在这里直接修改业务数据。
             self._page = 1
-            self._page_size = 20
+            # 页面可按正式后端的单帧回包容量指定分页大小；默认值保持既有业务页行为。
+            self._page_size = max(1, int(page_size))
             self._filter_signature = ("", "")
             self._query = QLineEdit()
             self._query.setPlaceholderText("输入关键字筛选")
@@ -121,12 +123,22 @@ if PYSIDE_AVAILABLE:
             self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
             self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-            self._table.setAlternatingRowColors(True)
+            # 深色工作台使用低对比行层级；Qt 默认 alternate-base 是亮色，
+            # 在深色主题下会产生截图中的白色横带，因此改由 QSS 控制 hover/selected。
+            self._table.setAlternatingRowColors(False)
             self._table.setSortingEnabled(True)
             self._table.setWordWrap(False)
             self._table.verticalHeader().setVisible(False)
-            self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)  # 有限的当前页记录均匀填满表格高度，避免数据行下方留下大块空白。
+            if compact_rows:
+                # 正式行情页采用固定紧凑行高，避免五条数据被拉伸成大块空白；
+                # 管理页保留 Stretch，兼容原有表格工作区填充约定。
+                self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+                self._table.verticalHeader().setDefaultSectionSize(42)
+                self._table.verticalHeader().setMinimumSectionSize(42)
+            else:
+                self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
             self._table.horizontalHeader().setStretchLastSection(True)
+            self._table.itemSelectionChanged.connect(self._emit_selected_row)
             self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self._table.customContextMenuRequested.connect(self._show_context_menu)
             header = QHBoxLayout()
@@ -195,6 +207,14 @@ if PYSIDE_AVAILABLE:
             self._previous.setEnabled(self._page > 1)
             self._next.setEnabled(self._page * self._page_size < total)
             self._summary.setText(f"共 {total} 条，第 {self._page} 页，当前显示 {len(items)} 条")
+
+        def _emit_selected_row(self) -> None:
+            """把选中行作为不可变快照通知宿主页面，详情面板不直接读取 QTableWidget。"""
+            row = self._table.currentRow()
+            first_item = self._table.item(row, 0) if row >= 0 else None
+            record = first_item.data(Qt.ItemDataRole.UserRole) if first_item is not None else None
+            if isinstance(record, dict):
+                self.row_selected.emit(dict(record))
 
         def set_loading(self) -> None:
             self._summary.setText("正在加载... 可继续调整筛选条件或点击刷新")  # 加载态只更新页内提示，筛选控件必须始终保留以便用户修正条件。
@@ -343,7 +363,7 @@ if PYSIDE_AVAILABLE:
     class ServiceTablePage(QWidget):
         """把多个 DataTablePanel 和 ClientProtocolClient 的异步回包关联起来。"""
 
-        def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, specs: tuple[TableSpec, ...], parent: QWidget | None = None) -> None:
+        def __init__(self, client: ClientProtocolClient, bridge: AsyncQtBridge, logger: ClientLogger, specs: tuple[TableSpec, ...], parent: QWidget | None = None, page_size: int = 20, compact_rows: bool = False) -> None:
             super().__init__(parent)
             self.client = client
             self.bridge = bridge
@@ -361,7 +381,7 @@ if PYSIDE_AVAILABLE:
             layout.addWidget(self._tabs)
             self._specs = specs
             for index, spec in enumerate(specs):
-                panel = DataTablePanel(spec)
+                panel = DataTablePanel(spec, page_size=page_size, compact_rows=compact_rows)
                 container = PageContainer(panel)
                 panel.refresh_requested.connect(lambda index=index: self._load(index))
                 panel.create_requested.connect(lambda values, index=index: self._create(index, values))

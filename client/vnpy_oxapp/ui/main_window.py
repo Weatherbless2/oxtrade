@@ -262,7 +262,8 @@ if PYSIDE_AVAILABLE:
                 self._add_page(UserRightsPage(self.client, self.bridge, self.logger, self.session))
                 self._add_page(FundManagementPage(self.client, self.bridge, self.logger, self.session))
                 self._add_page(RiskManagementPage(self.client, self.bridge, self.logger, self.session))
-                self._add_page(MarketPage(self.client, self.bridge, self.logger, self.session, self.market_hub))
+                self._market_page = MarketPage(self.client, self.bridge, self.logger, self.session, self.market_hub)
+                self._add_page(self._market_page)
                 self._add_page(TradingPage(self.client, self.bridge, self.logger, self.session))
             else:
                 # 无 client 的单元测试仍需要稳定的页面数量，因此放入占位页。
@@ -289,6 +290,7 @@ if PYSIDE_AVAILABLE:
         def _connect_signals(self) -> None:
             """集中连接跨组件信号，确保所有路由都经过主窗口。"""
             self.bridge.state_changed.connect(self._show_connection_state)
+            self.bridge.state_changed.connect(self._reset_session_on_transport_loss)
             self.bridge.response_received.connect(self._handle_response)
             # 旧列表仍驱动历史 page_index；新可见导航通过 menu_selected 走稳定 ID 路由。
             self._navigation.currentRowChanged.connect(self._select_page)
@@ -483,6 +485,9 @@ if PYSIDE_AVAILABLE:
             self._welcome_page.set_user(display_name or user_name)
             self._session_page.refresh(self.session)
             self._apply_session_visibility()
+            # 行情页在登录前会有一次匿名初始化请求；会话建立后立即重拉真实 QMT/PG 首页。
+            if hasattr(self, "_market_page"):
+                self._market_page.refresh_for_session()
             self._show_status("登录成功")
             self._log_panel.append("INFO", "oxApp.auth", f"会话已切换: {user_name}")
 
@@ -514,9 +519,11 @@ if PYSIDE_AVAILABLE:
             """在普通和最大化窗口模式之间切换，并同步标题栏图标。"""
             if self.isMaximized():
                 self.showNormal()
+                QApplication.processEvents()
                 self.state.window_maximized = False
             else:
                 self.showMaximized()
+                QApplication.processEvents()
                 self.state.window_maximized = True
             self._title_bar.set_maximized(self.state.window_maximized)
 
@@ -530,6 +537,19 @@ if PYSIDE_AVAILABLE:
             self._connection_status.style().polish(self._connection_status)
             self._config_panel.set_connection(state, reason)
             self._log_panel.append("INFO", "oxApp.transport", f"连接状态: {state} | {reason}")
+
+        def _reset_session_on_transport_loss(self, state: str, reason: str) -> None:
+            """网络连接失效时清除本地认证态，重连后必须重新登录。"""
+            del reason
+            if str(state).lower() not in {"disconnected", "reconnecting", "failed", "未连接"}:
+                return
+            if not self.session.authenticated:
+                return
+            self.session.logout()  # 服务端已撤销 connection 绑定，客户端不能继续复用旧 Token。
+            self.state.session = SessionState.LOGGED_OUT
+            self._config_panel.set_logged_out()
+            self._title_bar.set_account("未登录")
+            self._apply_session_visibility()
 
         @staticmethod
         def _formal_connection_state(state: str) -> str:

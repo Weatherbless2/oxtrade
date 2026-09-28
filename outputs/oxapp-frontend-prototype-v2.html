@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>oxApp 行情工作台 · UX-01 原型</title>
+  <style>
+    :root {
+      --bg: #0b1423;
+      --surface: #101d2f;
+      --surface-2: #14253a;
+      --surface-3: #182d45;
+      --line: #28415d;
+      --line-soft: #1e344d;
+      --text: #eef5fb;
+      --muted: #8da4bb;
+      --subtle: #627b94;
+      --accent: #52b9e9;
+      --accent-deep: #1d638b;
+      --positive: #49c59a;
+      --negative: #ee7780;
+      --warning: #e5b36a;
+      --shadow: 0 18px 42px rgba(0, 0, 0, .24);
+      font-family: "Microsoft YaHei UI", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+    :root.light {
+      --bg: #eef3f7;
+      --surface: #f8fafc;
+      --surface-2: #ffffff;
+      --surface-3: #e9f1f7;
+      --line: #c9d8e4;
+      --line-soft: #dce7ef;
+      --text: #183047;
+      --muted: #60788f;
+      --subtle: #8296a8;
+      --accent: #237ea9;
+      --accent-deep: #d9edf6;
+      --positive: #218a68;
+      --negative: #c95560;
+      --warning: #a86c21;
+      --shadow: 0 18px 42px rgba(41, 71, 96, .13);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--text); background: var(--bg); min-width: 0; }
+    button, input { font: inherit; }
+    button { color: inherit; cursor: pointer; }
+    .shell { height: 100vh; display: grid; grid-template-rows: 64px 1fr 30px; overflow: hidden; }
+    .topbar { display: flex; align-items: center; gap: 22px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line-soft); }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: #217da8; font-size: 14px; font-weight: 800; }
+    .brand-copy strong { display: block; font-size: 16px; letter-spacing: .2px; }
+    .brand-copy span { display: block; margin-top: 1px; color: var(--muted); font-size: 10px; }
+    .primary { display: flex; align-self: stretch; gap: 2px; }
+    .primary button { min-width: 54px; padding: 0 8px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); white-space: nowrap; }
+    .primary button:hover { color: var(--text); background: rgba(82,185,233,.06); }
+    .primary button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 700; }
+    .top-actions { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+    .search { width: 180px; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; outline: 0; background: var(--bg); color: var(--text); }
+    .search:focus { border-color: var(--accent); }
+    .icon-btn, .account { height: 34px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
+    .icon-btn { width: 34px; font-size: 16px; }
+    .icon-btn:hover, .account:hover { border-color: var(--line); background: var(--surface-3); }
+    .account { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-left: 1px solid var(--line-soft); border-radius: 0 6px 6px 0; }
+    .avatar { width: 23px; height: 23px; display: grid; place-items: center; border-radius: 50%; background: #287eaa; color: #fff; font-size: 11px; font-weight: 700; }
+    .content { min-height: 0; display: grid; grid-template-columns: 190px minmax(0, 1fr) 266px; }
+    .left, .right { min-width: 0; background: var(--surface); }
+    .left { border-right: 1px solid var(--line-soft); padding: 15px 10px; transition: width .18s ease; }
+    .left.collapsed { width: 64px; }
+    .left.collapsed .nav-label, .left.collapsed .section-label, .left.collapsed .nav-footer { display: none; }
+    .panel-heading { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 8px; color: var(--subtle); font-size: 11px; }
+    .collapse { width: 26px; height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); color: var(--muted); }
+    .nav-list { display: grid; gap: 4px; margin-top: 14px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 11px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); text-align: left; }
+    .nav-item:hover { background: var(--surface-3); color: var(--text); }
+    .nav-item.active { border-color: #2d6b8d; background: #173a55; color: var(--text); }
+    .nav-icon { width: 18px; color: var(--accent); text-align: center; font-size: 15px; }
+    .nav-label { white-space: nowrap; }
+    .nav-footer { position: absolute; bottom: 48px; padding: 0 9px; color: var(--subtle); font-size: 10px; line-height: 1.7; }
+    .workspace { min-width: 0; overflow: auto; padding: 20px 22px 24px; background: var(--bg); }
+    .page-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+    .eyebrow { color: var(--accent); font-size: 11px; letter-spacing: 1.5px; }
+    h1 { margin: 5px 0 0; font-size: 24px; line-height: 1.2; letter-spacing: 0; }
+    .head-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .head-meta b { color: var(--text); }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(135px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .metric { min-height: 92px; padding: 14px 15px; border: 1px solid var(--line-soft); border-radius: 7px; background: var(--surface); box-shadow: var(--shadow); }
+    .metric-label { color: var(--muted); font-size: 11px; }
+    .metric-value { margin-top: 8px; font-size: 24px; font-weight: 700; }
+    .metric-note { margin-top: 5px; color: var(--subtle); font-size: 10px; }
+    .metric-note.ok { color: var(--positive); }
+    .toolbar { display: flex; align-items: center; gap: 7px; min-height: 52px; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: 7px 7px 0 0; background: var(--surface); overflow-x: auto; }
+    .toolbar-label { flex: 0 0 auto; margin-right: 2px; color: var(--muted); font-size: 11px; }
+    .filter, .action { flex: 0 0 auto; height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+    .filter:hover, .action:hover { border-color: var(--accent); color: var(--text); }
+    .filter.active { border-color: var(--accent); background: var(--accent-deep); color: var(--text); }
+    .toolbar-spacer { flex: 1; }
+    .action.primary-action { border-color: #2f779a; background: #1c5c7d; color: #fff; }
+    .table-wrap { overflow: hidden; border: 1px solid var(--line-soft); border-top: 0; border-radius: 0 0 7px 7px; background: var(--surface); }
+    table { width: 100%; min-width: 720px; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+    th { height: 38px; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--muted); font-weight: 600; text-align: left; white-space: nowrap; }
+    td { height: 46px; padding: 0 10px; border-bottom: 1px solid var(--line-soft); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    tbody tr { background: var(--surface); }
+    tbody tr:hover { background: var(--surface-3); }
+    tbody tr.selected { background: #153b56; box-shadow: inset 2px 0 0 var(--accent); }
+    .code { color: var(--accent); font-weight: 700; }
+    .type { color: var(--muted); font-size: 11px; }
+    .up { color: var(--positive); } .down { color: var(--negative); } .warn { color: var(--warning); }
+    .table-foot { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; color: var(--muted); font-size: 11px; }
+    .pager { display: flex; gap: 5px; }
+    .pager button { width: 28px; height: 26px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+    .pager button.active { border-color: var(--accent); color: var(--text); background: var(--accent-deep); }
+    .right { position: relative; min-width: 0; border-left: 1px solid var(--line-soft); padding: 18px 14px 14px; }
+    .right.hidden { display: none; }
+    .right-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; font-size: 14px; font-weight: 700; }
+    .status-card, .detail-card { padding: 13px; border: 1px solid var(--line-soft); border-radius: 7px; background: var(--surface-2); }
+    .status-card { margin-bottom: 12px; }
+    .profile { display: flex; gap: 10px; align-items: center; }
+    .profile-name { font-weight: 700; } .profile-meta { margin-top: 3px; color: var(--positive); font-size: 10px; }
+    .key-value { display: grid; grid-template-columns: 74px 1fr; gap: 8px; margin-top: 12px; font-size: 11px; }
+    .key-value dt { color: var(--muted); } .key-value dd { margin: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+    .detail-card { min-height: 295px; }
+    .detail-empty { display: grid; place-items: center; min-height: 250px; color: var(--subtle); font-size: 12px; text-align: center; }
+    .detail-title { display: flex; align-items: start; justify-content: space-between; }
+    .detail-title strong { display: block; color: var(--accent); font-size: 16px; }
+    .detail-title span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .detail-price { font-size: 20px; font-weight: 700; text-align: right; }
+    .detail-section { margin-top: 18px; color: var(--subtle); font-size: 10px; letter-spacing: .5px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 15px; margin-top: 9px; }
+    .detail-grid small { display: block; color: var(--muted); font-size: 10px; } .detail-grid b { display: block; margin-top: 3px; font-size: 12px; }
+    .notice { margin-top: 12px; padding: 10px; border-left: 2px solid var(--warning); background: rgba(229,179,106,.08); color: var(--muted); font-size: 10px; line-height: 1.6; }
+    .bottom { display: flex; align-items: center; gap: 22px; padding: 0 16px; border-top: 1px solid var(--line-soft); background: var(--surface); color: var(--muted); font-size: 10px; }
+    .bottom span { display: inline-flex; align-items: center; gap: 5px; } .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--positive); }
+    .toast { position: fixed; right: 288px; bottom: 48px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); color: var(--text); box-shadow: var(--shadow); font-size: 11px; opacity: 0; transform: translateY(5px); pointer-events: none; transition: .18s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 1350px) {
+      .topbar { gap: 12px; padding-left: 14px; padding-right: 14px; }
+      .brand { min-width: 126px; }
+      .top-actions { gap: 4px; }
+      .search { width: 148px; }
+      .content { grid-template-columns: 164px minmax(0,1fr) 232px; }
+      .workspace { padding-left: 16px; padding-right: 16px; }
+      .metrics { grid-template-columns: repeat(2,1fr); }
+      .right { padding-left: 11px; padding-right: 11px; }
+    }
+    @media (max-width: 1050px) {
+      .brand { min-width: 112px; }
+      .brand-copy span { display: none; }
+      .primary button { min-width: 45px; padding: 0 5px; }
+      .search { width: 126px; }
+      .content { grid-template-columns: 150px minmax(0,1fr) 216px; }
+      .workspace { padding: 16px 12px 20px; }
+      .page-head { align-items: start; flex-direction: column; gap: 5px; }
+      .toolbar { margin-left: 0; }
+      .right { padding-top: 14px; }
+    }
+    @media (max-width: 860px) {
+      .topbar { gap: 6px; }
+      .primary button:nth-child(n+5), .top-actions .account, .top-actions .icon-btn[title="最小化"], .top-actions .icon-btn[title="最大化"] { display: none; }
+      .search { width: 112px; }
+      .content { grid-template-columns: 60px minmax(0,1fr) 204px; }
+      .left { padding-left: 7px; padding-right: 7px; }
+      .left .section-label, .left .nav-label, .left .nav-footer { display: none; }
+      .left .panel-heading { justify-content: center; padding: 0; }
+      .left .nav-item { justify-content: center; padding: 0; }
+      .left .nav-icon { width: auto; }
+      .metrics { gap: 8px; }
+      .metric { padding-left: 11px; padding-right: 11px; }
+      .metric-value { font-size: 21px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">OX</div><div class="brand-copy"><strong>oxApp</strong><span>量化工作台</span></div></div>
+      <nav class="primary" aria-label="一级导航">
+        <button>首页</button><button class="active">行情</button><button>策略</button><button>交易</button><button>研究</button><button>管理</button>
+      </nav>
+      <div class="top-actions"><input class="search" placeholder="⌕  搜索菜单 / 产品" aria-label="全局搜索"><button class="icon-btn" id="themeBtn" title="切换主题">◐</button><button class="icon-btn" id="configBtn" title="显示或隐藏配置">⚙</button><button class="account"><span class="avatar">Y</span><span>yangjh⌄</span></button><button class="icon-btn" title="最小化">−</button><button class="icon-btn" title="最大化">□</button><button class="icon-btn" title="关闭">×</button></div>
+    </header>
+    <div class="content">
+      <aside class="left" id="leftPanel">
+        <div class="panel-heading"><span class="section-label">系统菜单</span><button class="collapse" id="collapseBtn" title="收起左侧菜单">‹</button></div>
+        <nav class="nav-list" aria-label="系统菜单"><button class="nav-item"><span class="nav-icon">⌂</span><span class="nav-label">工作台</span></button><button class="nav-item active"><span class="nav-icon">⌁</span><span class="nav-label">行情中心</span></button><button class="nav-item"><span class="nav-icon">◇</span><span class="nav-label">策略研究</span></button><button class="nav-item"><span class="nav-icon">⇄</span><span class="nav-label">交易终端</span></button><button class="nav-item"><span class="nav-icon">▣</span><span class="nav-label">产品管理</span></button><button class="nav-item"><span class="nav-icon">⚙</span><span class="nav-label">系统管理</span></button></nav>
+        <div class="nav-footer">数据范围由权限控制<br>页面只读正式服务结果</div>
+      </aside>
+      <main class="workspace">
+        <div class="page-head"><div><div class="eyebrow">MARKET CENTER / SNAPSHOT</div><h1>行情总览</h1></div><div class="head-meta">数据模式：<b>快照</b> · 最近刷新 <b>16:28:12</b></div></div>
+        <section class="metrics" aria-label="市场摘要"><div class="metric"><div class="metric-label">股票行情</div><div class="metric-value">5,813</div><div class="metric-note ok">● 主数据关联正常</div></div><div class="metric"><div class="metric-label">期货行情</div><div class="metric-value">267</div><div class="metric-note ok">● 六市场覆盖</div></div><div class="metric"><div class="metric-label">当前结果</div><div class="metric-value">6,080</div><div class="metric-note">全市场 · 第 1 / 1,216 页</div></div><div class="metric"><div class="metric-label">数据新鲜度</div><div class="metric-value">2.4s</div><div class="metric-note ok">● 最近入库正常</div></div></section>
+        <section aria-label="行情筛选"><div class="toolbar"><span class="toolbar-label">市场</span><button class="filter active">全市场</button><button class="filter">深市 0</button><button class="filter">沪市 1</button><button class="filter">北交所 2</button><button class="filter">期货 DFHZIG</button><span class="toolbar-spacer"></span><button class="action">列设置</button><button class="action">刷新</button><button class="action primary-action">实时订阅</button></div><div class="table-wrap"><table><thead><tr><th style="width:14%">标的</th><th style="width:14%">名称</th><th style="width:11%">类型</th><th style="width:8%">市场</th><th style="width:12%">最新</th><th style="width:12%">涨跌</th><th style="width:13%">成交量</th><th>行情时间</th></tr></thead><tbody id="quoteRows"><tr data-code="Z:SM708"><td class="code">Z:SM708</td><td>锰硅2708</td><td class="type">期货</td><td>Z</td><td>5,886.0</td><td class="up">+0.42%</td><td>10.0</td><td>2026-09-14 15:00</td></tr><tr data-code="Z:SM707"><td class="code">Z:SM707</td><td>锰硅2707</td><td class="type">期货</td><td>Z</td><td>5,868.0</td><td class="down">-0.18%</td><td>102.0</td><td>2026-09-14 15:00</td></tr><tr data-code="Z:SM706"><td class="code">Z:SM706</td><td>锰硅2706</td><td class="type">期货</td><td>Z</td><td>5,874.0</td><td class="up">+0.22%</td><td>90.0</td><td>2026-09-14 15:00</td></tr><tr data-code="Z:SM705"><td class="code">Z:SM705</td><td>锰硅2705</td><td class="type">期货</td><td>Z</td><td>5,866.0</td><td class="down">-0.34%</td><td>2,477.0</td><td>2026-09-14 15:00</td></tr><tr data-code="Z:SM704"><td class="code">Z:SM704</td><td>锰硅2704</td><td class="type">期货</td><td>Z</td><td>5,858.0</td><td class="up">+0.12%</td><td>43.0</td><td>2026-09-14 15:00</td></tr></tbody></table><div class="table-foot"><span>显示 1-5 条，共 6,080 条 · 数据源：QMT / PostgreSQL</span><div class="pager"><button>‹</button><button class="active">1</button><button>2</button><button>3</button><button>…</button><button>›</button></div></div></div></section>
+      </main>
+      <aside class="right" id="rightPanel"><div class="right-title"><span>账号与配置</span><button class="icon-btn" id="closeConfig" title="隐藏配置面板">›</button></div><div class="status-card"><div class="profile"><span class="avatar">Y</span><div><div class="profile-name">yangjh</div><div class="profile-meta">● 已连接 · 正式环境</div></div></div><dl class="key-value"><dt>会话</dt><dd>16733351898777158576</dd><dt>权限</dt><dd>market.quote.read</dd><dt>主题</dt><dd id="themeLabel">深蓝</dd></dl></div><div class="detail-card" id="detailCard"><div class="detail-empty">点击行情行查看<br>主数据、最新行情和时间来源</div></div><div class="notice">实时 Push 尚未启用。当前页面展示的是 QMT/PG 最新快照；接入 OX-P1-01 后，这里会显示订阅数、序列号和实时延迟。</div></aside>
+    </div>
+    <footer class="bottom"><span><i class="dot"></i> HP-Socket 已连接</span><span>数据库：ta_data</span><span>快照查询正常</span><span>版本：UX-01 原型</span><span style="margin-left:auto">状态栏 · 所有状态可追踪</span></footer>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+    const root = document.documentElement;
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    function notify(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 1800); }
+    document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.filter').forEach(item => item.classList.remove('active')); button.classList.add('active'); notify('已切换：' + button.textContent); }));
+    document.querySelectorAll('.nav-item').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active')); button.classList.add('active'); notify('已打开' + button.textContent.trim()); }));
+    document.getElementById('collapseBtn').addEventListener('click', () => { const panel = document.getElementById('leftPanel'); panel.classList.toggle('collapsed'); document.getElementById('collapseBtn').textContent = panel.classList.contains('collapsed') ? '›' : '‹'; });
+    function hideRight() { document.getElementById('rightPanel').classList.add('hidden'); notify('配置面板已隐藏'); }
+    document.getElementById('closeConfig').addEventListener('click', hideRight);
+    document.getElementById('configBtn').addEventListener('click', () => { const panel = document.getElementById('rightPanel'); panel.classList.toggle('hidden'); notify(panel.classList.contains('hidden') ? '配置面板已隐藏' : '配置面板已显示'); });
+    document.getElementById('themeBtn').addEventListener('click', () => { root.classList.toggle('light'); document.getElementById('themeLabel').textContent = root.classList.contains('light') ? '浅色' : '深蓝'; notify('已切换为' + (root.classList.contains('light') ? '浅色' : '深蓝') + '主题'); });
+    document.querySelectorAll('#quoteRows tr').forEach(row => row.addEventListener('click', () => { document.querySelectorAll('#quoteRows tr').forEach(item => item.classList.remove('selected')); row.classList.add('selected'); const cells = row.children; document.getElementById('detailCard').innerHTML = `<div class="detail-title"><div><strong>${cells[0].textContent}</strong><span>${cells[1].textContent} · ${cells[2].textContent} · 市场 ${cells[3].textContent}</span></div><div class="detail-price">${cells[4].textContent}<div class="${cells[5].className}" style="font-size:11px">${cells[5].textContent}</div></div></div><div class="detail-section">最新行情</div><div class="detail-grid"><div><small>成交量</small><b>${cells[6].textContent}</b></div><div><small>行情时间</small><b>${cells[7].textContent}</b></div><div><small>入库时间</small><b>2026-09-14 16:28:12</b></div><div><small>来源</small><b>QMT / PostgreSQL</b></div></div><div class="detail-section">主数据</div><div class="detail-grid"><div><small>合约状态</small><b class="up">可用</b></div><div><small>数据权限</small><b>quote.read</b></div></div>`; notify('已打开 ' + cells[0].textContent + ' 详情'); }));
+    document.querySelectorAll('.action').forEach(button => button.addEventListener('click', () => notify(button.textContent.trim() + '：已提交请求')));
+  </script>
+</body>
+</html>

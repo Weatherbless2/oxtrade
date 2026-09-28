@@ -88,7 +88,7 @@ if PYSIDE_AVAILABLE:
             toggle.setObjectName("panelToggleButton")
             toggle.setToolTip("隐藏配置面板")
             toggle.setFixedSize(28, 28)
-            toggle.clicked.connect(self.toggle_requested)
+            toggle.clicked.connect(lambda _checked=False: self.toggle_requested.emit())
             self._toggle = toggle
             head.addWidget(toggle)
             layout.addLayout(head)
@@ -132,7 +132,7 @@ if PYSIDE_AVAILABLE:
 
             self._theme = QPushButton("深蓝")
             self._theme.setObjectName("configValueButton")
-            self._theme.clicked.connect(self.theme_requested)
+            self._theme.clicked.connect(lambda _checked=False: self.theme_requested.emit())
             form.addRow("主题", self._theme)
 
             self._auto_refresh = SwitchControl()
@@ -164,7 +164,7 @@ if PYSIDE_AVAILABLE:
 
             logout = QPushButton("退出登录")
             logout.setObjectName("logoutButton")
-            logout.clicked.connect(self.logout_requested)
+            logout.clicked.connect(lambda _checked=False: self.logout_requested.emit())
             layout.addWidget(logout)
 
         @property

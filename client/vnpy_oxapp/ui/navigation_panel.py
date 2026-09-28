@@ -52,7 +52,7 @@ if PYSIDE_AVAILABLE:
             toggle.setObjectName("navigationToggleButton")
             toggle.setFixedSize(28, 28)
             toggle.setToolTip("收起系统菜单")
-            toggle.clicked.connect(self.toggle_requested)
+            toggle.clicked.connect(lambda _checked=False: self.toggle_requested.emit())
             head_layout.addWidget(toggle)
             self._brand = brand
             self._toggle = toggle

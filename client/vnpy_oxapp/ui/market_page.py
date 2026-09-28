@@ -15,7 +15,10 @@ from .table_page import ServiceTablePage, TableSpec
 
 try:
     from PySide6.QtCore import QTimer, Signal
-    from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import (
+        QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+        QPushButton, QVBoxLayout, QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     PYSIDE_AVAILABLE = False
@@ -39,6 +42,7 @@ if PYSIDE_AVAILABLE:
             self._refresh_timer = QTimer(self)
             self._refresh_timer.setSingleShot(True)
             self._refresh_timer.timeout.connect(self._refresh_from_market)  # 高频事件先合并，单个 Tick 不应逐条触发表格重绘。
+            self._metric_values: dict[str, QLabel] = {}
             self._symbols = QComboBox()
             symbols = (
                 (("", "全市场"), ("0", "深市股票"), ("1", "沪市股票"), ("2", "北交所股票"),
@@ -70,6 +74,16 @@ if PYSIDE_AVAILABLE:
             toolbar = QFrame()
             toolbar.setObjectName("summaryBar")
             toolbar.setLayout(toolbar_layout)
+
+            metric_bar = QFrame()
+            metric_bar.setObjectName("marketSummaryBar")
+            metric_layout = QHBoxLayout(metric_bar)
+            metric_layout.setContentsMargins(0, 0, 0, 0)
+            metric_layout.setSpacing(8)
+            metric_layout.addWidget(self._metric_card("当前范围", "全市场", "市场码由服务端解释"), 1)
+            metric_layout.addWidget(self._metric_card("总行情", "—", "等待正式回包"), 1)
+            metric_layout.addWidget(self._metric_card("本页显示", "—", "分页大小由客户端控制"), 1)
+            metric_layout.addWidget(self._metric_card("最近入库", "等待", "来源：QMT / PostgreSQL"), 1)
 
             specs = (
                 TableSpec(
@@ -104,13 +118,31 @@ if PYSIDE_AVAILABLE:
             )
             if self._formal_qmt:
                 specs = specs[:1]  # 本期只展示已有真实 PG 快照；Tick/K线/盘口在没有对应真实表时不占用用户工作区。
-            self._tables = ServiceTablePage(client, bridge, logger, specs)
+            # 正式 QMT/PG 响应经由现有 System V IPC 回包；每页五条可稳定展示多条真实行情并支持全量翻页。
+            self._tables = ServiceTablePage(
+                client,
+                bridge,
+                logger,
+                specs,
+                page_size=5 if self._formal_qmt else 20,
+                compact_rows=self._formal_qmt,
+            )
             self._tabs = self._tables._tabs  # 主窗口刷新按钮沿用 ServiceTablePage 的当前页刷新语义。
+            self._detail_panel = self._build_detail_panel() if self._formal_qmt else None
+            if self._detail_panel is not None:
+                self._tables._panels[0][1].row_selected.connect(self._update_detail)
             layout = QVBoxLayout(self)
             layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(8)
+            layout.setSpacing(10)
+            layout.addWidget(metric_bar)
             layout.addWidget(toolbar)
-            layout.addWidget(self._tables, 1)
+            content_layout = QHBoxLayout()
+            content_layout.setContentsMargins(0, 0, 0, 0)
+            content_layout.setSpacing(10)
+            content_layout.addWidget(self._tables, 1)
+            if self._detail_panel is not None:
+                content_layout.addWidget(self._detail_panel, 0)
+            layout.addLayout(content_layout, 1)
             bridge.response_received.connect(self._on_response)
             bridge.market_event_received.connect(self._on_market_event)
             bridge.market_state_changed.connect(self._on_market_state)
@@ -125,6 +157,129 @@ if PYSIDE_AVAILABLE:
             self._keyword.returnPressed.connect(self._refresh_selected_symbol)
             self._set_symbol_filter()
             self._tables._load(0)  # ServiceTablePage 构造时已请求过未筛选快照；此处发起当前标的筛选的正式初始请求。
+
+        def _metric_card(self, label: str, value: str, note: str) -> QFrame:
+            """构造只读摘要卡片；数值后续只由正式回包更新，不在页面里估算全量数据。"""
+            card = QFrame()
+            card.setObjectName("marketMetricCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 10, 12, 10)
+            card_layout.setSpacing(3)
+            label_widget = QLabel(label)
+            label_widget.setObjectName("marketMetricLabel")
+            value_widget = QLabel(value)
+            value_widget.setObjectName("marketMetricValue")
+            note_widget = QLabel(note)
+            note_widget.setObjectName("marketMetricNote")
+            card_layout.addWidget(label_widget)
+            card_layout.addWidget(value_widget)
+            card_layout.addWidget(note_widget)
+            self._metric_values[label] = value_widget
+            return card
+
+        def _build_detail_panel(self) -> QFrame:
+            """创建行情详情面板，详情数据由表格选中行快照驱动。"""
+            panel = QFrame()
+            panel.setObjectName("marketDetailPanel")
+            panel.setMinimumWidth(250)
+            panel.setMaximumWidth(310)
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(14, 14, 14, 14)
+            layout.setSpacing(8)
+            heading = QLabel("行情详情")
+            heading.setObjectName("marketDetailTitle")
+            self._detail_code = QLabel("未选择标的")
+            self._detail_code.setObjectName("marketDetailTitle")
+            self._detail_subtitle = QLabel("点击列表中的一行查看主数据与行情")
+            self._detail_subtitle.setObjectName("marketDetailSubtitle")
+            self._detail_price = QLabel("—")
+            self._detail_price.setObjectName("marketDetailPrice")
+            self._detail_change = QLabel("—")
+            self._detail_change.setObjectName("marketDetailChange")
+            top = QHBoxLayout()
+            top.addWidget(self._detail_code, 1)
+            price_box = QVBoxLayout()
+            price_box.addWidget(self._detail_price)
+            price_box.addWidget(self._detail_change)
+            top.addLayout(price_box)
+            layout.addWidget(heading)
+            layout.addLayout(top)
+            layout.addWidget(self._detail_subtitle)
+            layout.addWidget(self._detail_section("最新行情"))
+            latest = QGridLayout()
+            latest.setHorizontalSpacing(12)
+            latest.setVerticalSpacing(8)
+            self._detail_fields: dict[str, QLabel] = {}
+            for index, key in enumerate(("成交量", "成交额", "行情时间", "入库时间", "来源", "市场")):
+                row, column = divmod(index, 2)
+                value = QLabel("—")
+                value.setObjectName("marketDetailValue")
+                latest.addWidget(self._detail_label(key), row * 2, column)
+                latest.addWidget(value, row * 2 + 1, column)
+                self._detail_fields[key] = value
+            layout.addLayout(latest)
+            layout.addWidget(self._detail_section("主数据"))
+            master = QGridLayout()
+            master.setHorizontalSpacing(12)
+            master.setVerticalSpacing(8)
+            for index, key in enumerate(("资产类别", "权限")):
+                value = QLabel("—" if key == "资产类别" else "market.quote.read")
+                value.setObjectName("marketDetailValue")
+                master.addWidget(self._detail_label(key), 0, index)
+                master.addWidget(value, 1, index)
+                self._detail_fields[key] = value
+            layout.addLayout(master)
+            layout.addStretch(1)
+            return panel
+
+        @staticmethod
+        def _detail_label(text: str) -> QLabel:
+            label = QLabel(text)
+            label.setObjectName("marketDetailLabel")
+            return label
+
+        @staticmethod
+        def _detail_section(text: str) -> QLabel:
+            label = QLabel(text)
+            label.setObjectName("marketDetailSection")
+            return label
+
+        def _update_detail(self, record: dict[str, Any]) -> None:
+            """将当前页的真实响应快照映射到详情区，不发起额外的伪造查询。"""
+            if self._detail_panel is None:
+                return
+            self._detail_code.setText(str(record.get("instrument_id", "未命名标的")))
+            self._detail_subtitle.setText(
+                f"{record.get('name', '—')} · {record.get('asset_class', '—')} · 市场 {record.get('market', '—')}"
+            )
+            last_price = str(record.get("last_price", "—"))
+            pre_close = record.get("pre_close")
+            self._detail_price.setText(last_price)
+            try:
+                change = (float(last_price) - float(pre_close)) / float(pre_close) * 100 if pre_close not in (None, "", 0, "0") else None
+                self._detail_change.setText(f"{change:+.2f}%" if change is not None else "涨跌待计算")
+                self._detail_change.setProperty("trend", "up" if change is not None and change >= 0 else "down")
+            except (TypeError, ValueError, ZeroDivisionError):
+                self._detail_change.setText("涨跌待计算")
+                self._detail_change.setProperty("trend", "neutral")
+            self._detail_change.style().unpolish(self._detail_change)
+            self._detail_change.style().polish(self._detail_change)
+            values = {
+                "成交量": record.get("volume", "—"),
+                "成交额": record.get("amount", "—"),
+                "行情时间": record.get("quote_time", "—"),
+                "入库时间": record.get("receive_time", "—"),
+                "来源": record.get("source", "QMT/PG"),
+                "市场": record.get("market", "—"),
+                "资产类别": record.get("asset_class", "—"),
+            }
+            for key, value in values.items():
+                self._detail_fields[key].setText(str(value))
+
+        def refresh_for_session(self) -> None:
+            """登录会话建立后重新请求第一页，避免匿名构造请求的结果残留在页面。"""
+            self._set_symbol_filter()
+            self._tables._load(0)
 
         def _load_current(self, index: int) -> None:
             self._set_symbol_filter()
@@ -180,6 +335,11 @@ if PYSIDE_AVAILABLE:
                 total = int(response.payload.get("total", len(items)))
                 futures = sum(1 for item in items if item.get("asset_class") == "futures")
                 source = str(items[0].get("source", "QMT/PG")) if items else "QMT/PG"
+                self._metric_values["当前范围"].setText(self._symbols.currentText().split("  ", 1)[-1] or "全市场")
+                self._metric_values["总行情"].setText(f"{total:,}")
+                self._metric_values["本页显示"].setText(f"{len(items)} 条")
+                latest_receive = max((str(item.get("receive_time", "")) for item in items), default="")
+                self._metric_values["最近入库"].setText(latest_receive[-8:] if latest_receive else "—")
                 self._status.setText(
                     f"真实数据：{source} | 共 {total} 条 | 当前页 {len(items)} 条（期货 {futures} 条）"
                 )  # 页面状态只由正式回包更新，失败时 ServiceTablePage 会保留明确错误而不展示 Mock。

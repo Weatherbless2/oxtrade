@@ -231,6 +231,31 @@ QTabWidget::pane, QTableWidget {
     selection-background-color: #294b62;
     selection-color: #ffffff;
 }
+QFrame#summaryBar, QFrame#marketSummaryBar { background: transparent; }
+QFrame#marketMetricCard, QFrame#marketDetailPanel {
+    background: #101c30;
+    border: 1px solid #243752;
+    border-radius: 7px;
+}
+QLabel#marketMetricLabel, QLabel#marketDetailLabel,
+QLabel#marketDetailSection, QLabel#marketPageMeta { color: #8ea4be; }
+QLabel#marketMetricLabel { font-size: 11px; }
+QLabel#marketMetricValue { color: #f5fbff; font-size: 21px; font-weight: 700; }
+QLabel#marketMetricNote { color: #657b95; font-size: 10px; }
+QLabel#marketMetricNote[status="ok"] { color: #43c78a; }
+QLabel#marketDetailTitle { color: #39a8e8; font-size: 15px; font-weight: 700; }
+QLabel#marketDetailSubtitle { color: #8ea4be; font-size: 11px; }
+QLabel#marketDetailPrice { color: #f5fbff; font-size: 19px; font-weight: 700; }
+QLabel#marketDetailChange { color: #8ea4be; font-size: 11px; }
+QLabel#marketDetailChange[trend="up"] { color: #43c78a; }
+QLabel#marketDetailChange[trend="down"] { color: #ef747e; }
+QLabel#marketDetailValue { color: #e6eef9; font-size: 12px; }
+QLabel#marketDetailEmpty { color: #657b95; font-size: 11px; }
+QLabel#tableSummary { color: #8ea4be; font-size: 11px; }
+QTableWidget::item { background: #101c30; border-bottom: 1px solid #1e344d; padding: 4px 6px; }
+QTableWidget::item:hover { background: #162d45; }
+QTableWidget::item:selected { background: #183f5d; color: #f5fbff; }
+QHeaderView::section { min-height: 26px; }
 QTabBar::tab { color: #96a6b1; background: #14233a; border: 1px solid #243752; padding: 8px 18px; min-width: 72px; }
 QTabBar::tab:hover { color: #e5edf2; background: #1d3b56; }
 QTabBar::tab:selected { color: #ffffff; background: #214562; border-bottom: 2px solid #55a8da; }
@@ -338,6 +363,21 @@ QTabWidget::pane, QTableWidget, QGroupBox { color: #142536; background: #ffffff;
 QTabBar::tab, QHeaderView::section { color: #5c6c7c; background: #eef3f8; border-color: #d7e0ea; }
 QTabBar::tab:hover { color: #142536; background: #e8eef5; }
 QTabBar::tab:selected { color: #163653; background: #ffffff; border-bottom-color: #246bce; }
+QFrame#marketMetricCard, QFrame#marketDetailPanel { background: #ffffff; border-color: #d7e0ea; }
+QLabel#marketMetricLabel, QLabel#marketDetailLabel, QLabel#marketDetailSection, QLabel#marketPageMeta { color: #5c6c7c; }
+QLabel#marketMetricValue, QLabel#marketDetailValue { color: #142536; }
+QLabel#marketMetricNote { color: #7b8b9a; }
+QLabel#marketMetricNote[status="ok"] { color: #12805d; }
+QLabel#marketDetailTitle { color: #246bce; }
+QLabel#marketDetailSubtitle, QLabel#marketDetailEmpty { color: #7b8b9a; }
+QLabel#marketDetailPrice { color: #142536; }
+QLabel#marketDetailChange { color: #5c6c7c; }
+QLabel#marketDetailChange[trend="up"] { color: #12805d; }
+QLabel#marketDetailChange[trend="down"] { color: #c23b3b; }
+QLabel#tableSummary { color: #5c6c7c; }
+QTableWidget::item { background: #ffffff; border-bottom-color: #e1e8ef; }
+QTableWidget::item:hover { background: #edf5fb; }
+QTableWidget::item:selected { background: #d8ebf7; color: #142536; }
 QCheckBox, QCheckBox#configSwitch { color: #31516e; }
 """
 
