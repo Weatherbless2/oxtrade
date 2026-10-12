@@ -12,7 +12,7 @@
 /logs/
 /config/oxapp.ini
 /config/mbsconfig.ini
-/config/lbm/
+/config/lbm
 *.log
 
 # IDE and editor files
