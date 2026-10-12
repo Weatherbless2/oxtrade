@@ -1,289 +1,218 @@
-# oxApp
+# oxtrade / oxApp
 
-`oxApp` 是 UltraQuant 平台的 Qt 桌面客户端工程。本分支 `feature/14-market-routing`
-在 #24 Mock 端到端基线上增加同仓库的 `oxMWH` 行情服务核心和客户端行情接入。
-默认使用仓库内 Mock 行情源，保证不依赖、不启动其他项目即可离线构建和演示。
+`oxtrade / oxApp` 是一个面向交易与行情研究的桌面客户端 + C++ 服务端工程。它把 Qt 工作台、认证会话、HP-Socket 通信、System V IPC、Query Worker、LBM 插件、QMT/PostgreSQL 行情查询、实时行情接入边界和前端体验设计放在同一套可构建、可测试、可交付的代码与文档体系中。
 
-> **重要边界**：本分支的登录、权限、行情、资金、成交和风控结果全部是 `Mock-only`。
-> 它们不代表真实登录、真实授权、真实数据库落库、正式生产行情、真实柜台报单或真实风控执行，
-> 不会连接生产柜台、交易所或数据库。
+这个仓库的重点不是直接接入真实交易柜台，而是把从 UI、通信、服务路由、数据库读取到工单沉淀的完整工程链路做成可演示、可扩展、可接手的项目。
 
-## 当前状态
+仅用于工程开发、联调验证、学习和后续生产化改造，不构成投资建议，也不代表已接入真实柜台自动下单。
 
-| 项目 | 状态 |
-| --- | --- |
-| 客户端 | 基于 vn.py Qt 组织方式改造，左侧导航、页签工作区和右侧运行状态面板已可运行 |
-| 管理功能 | 菜单、字典、日志、服务状态、用户、角色、站点、托管服务和权限关系 Mock 闭环 |
-| 产品资金 | 产品、项目、资金账号、资产-资金账号关联 Mock 查询和 CRUD |
-| 风控 | 参数、规则、事件 Mock 查询、编辑、启停/处理 |
-| 行情 | `oxMWH` 标准化、订阅、重复/乱序保护；客户端报价、Tick、1 分钟 K 线、五档盘口和 Mock 展示 |
-| 交易 | 限价委托、数量校验、资金/仓位冻结、撤单、模拟成交和查询 |
-| 后端基础设施 | 管理类请求实际经过 #1-#8 的路由、System V IPC、Query Worker、动态 Mock LBM |
-| 正式后端 | #9-#13 数据访问层、正式 LBM、数据库和正式 HP-Socket 尚未接入 |
+## 一句话理解
 
-## 架构图
+用户登录后，Qt 客户端通过 HP-Socket 发起登录和行情请求；`oxMBS` 负责会话、权限、路由和低频查询分发；`lbm_qmt.so` 调用 PostgreSQL `ta_data` 中的 QMT 数据；响应再沿原路径回到 Qt 页面，展示分页行情、主数据、日历、K 线等业务结果。
 
-### Mock 端到端链路
-
-```mermaid
-flowchart LR
-    UI[Qt/vn.py 风格页面] --> S[Service 业务服务]
-    S --> T[MockBackendTransport]
-    T --> P[oxMbsMockBackend<br/>stdin/stdout 临时协议]
-    P --> R[WorkFuncRouter #6]
-    R --> Q1[System V Request Queue #4]
-    Q1 --> W[Query Worker #7]
-    W --> L[Mock LBM 动态库 #8]
-    L --> Q2[System V Reply Queue #4]
-    Q2 --> C[ReplyCollector #7]
-    C --> P
-    P --> T
-    T --> UI
+```text
+PySide6 Qt Client
+  -> HP-Socket / PackMessage
+  -> C++ oxMBS Server
+  -> AuthService / Session / Permission
+  -> WorkFuncRouter / System V IPC
+  -> Query Worker
+  -> LBM Dispatcher
+  -> lbm_qmt.so
+  -> QmtRepository
+  -> PostgreSQL ta_data
 ```
 
-管理类请求的 `request_id`、`session_id`、超时和错误状态会贯穿整个链路；页面只接收最终响应，
-不会直接操作 Mock 数据容器、System V 队列或 C++ LBM。
+## 当前进度
 
-### 行情、交易与查询边界
+截至当前仓库分支，核心链路已经完成并保留在工单文档中：
 
-```mermaid
-flowchart TB
-    UI[Qt 工作台]
-    UI --> M[行情页面]
-    UI --> T[交易页面]
-    UI --> A[账户/持仓/委托/成交查询]
-    M --> MG[oxMWH/MockMarketGateway<br/>同仓库行情 Mock]
-    T --> TG[MockTradeGateway<br/>模拟交易核心]
-    A --> QG[MockQueryGateway<br/>模拟查询核心]
-    MG -. 后续替换 .-> HM[正式行情源/HP-Socket]
-    TG -. 后续替换 .-> HT[正式交易网关/柜台]
-    QG -. 后续替换 .-> HQ[正式查询核心/后端服务]
-    MG -. 不进入 .-> IPC[低频 Query Worker IPC]
-    TG -. 不进入 .-> IPC
+| 模块 | 状态 | 当前情况 |
+| --- | --- | --- |
+| PySide6 Qt 客户端 | 已完成 | 无边框窗口、统一主题、导航、工作台、行情页和演示页面 |
+| HP-Socket 通信 | 已完成 | C++ Server、Python/Qt Transport、PackMessage 编解码和请求关联 |
+| 认证与权限 | 已完成第一版 | challenge、password proof、session、access token、权限校验和会话撤销 |
+| 后端服务骨架 | 已完成 | 配置、日志、进程生命周期、路由、IPC、Worker、LBM 装载 |
+| QMT/PG 查询 | 已完成 | 行情快照、标的、日历、K 线、IPO 等业务接口按工单沉淀 |
+| 响应容量与分页 | 已完成 | 统一响应模型、分页、容量保护、IPC/Worker/LBM 链路验证 |
+| QMT 工作台 | 已完成 | 行情中心、筛选、分页、空态/错误态、来源展示和前端体验优化 |
+| 实时 QMT Push | 规划中 | `OX-P1-01` 已定义订阅、广播、HP-Socket Push 和故障处理方案 |
+| TLS 与真实柜台 | 不包含 | 当前阶段不启用 TLS，不包含交易柜台、报单和真实资金操作 |
+
+## 已有真实结果
+
+- QMT/PostgreSQL 行情读取链路已经跑通，页面不再使用 Mock 行情作为主数据源。
+- `lbm_qmt.so` 已作为独立 LBM 插件接入 Worker，替代直接硬编码路由。
+- 行情页已支持分页、筛选、空态、错误态、来源展示和正式 QMT/PG 数据。
+- 认证链路已覆盖 challenge、password proof、access token、session 撤销和权限校验。
+- 工单、阶段说明、路线图、原型说明和架构文档已经随代码一起上传到仓库。
+
+这些结果属于当前仓库和当前运行环境下的实现状态，不代表已完成生产部署、TLS、压测、柜台接入或全链路高可用验收。
+
+## 系统怎么工作
+
+```text
+用户登录
+  |
+  v
+Qt 客户端发起 challenge / login
+  |
+  v
+oxMBS 校验账号与 password proof
+  |
+  v
+服务端签发 session / access_token / permissions
+  |
+  v
+客户端携带 session 发起 quote.latest / instrument.search / calendar.page / bar.page / ipo.list
+  |
+  v
+WorkFuncRouter 分发低频业务请求
+  |
+  v
+System V IPC -> Query Worker
+  |
+  v
+LBM Dispatcher -> lbm_qmt.so
+  |
+  v
+QmtRepository -> PostgreSQL ta_data
+  |
+  v
+PackMessage response -> HP-Socket -> Qt 页面
 ```
 
-行情和交易故意不进入慢查询 IPC；它们只共享客户端请求关联和错误模型，避免把高频链路与低频管理查询混在一起。
+整体是服务端驱动的低频查询链路；行情、主数据、日历、K 线和 IPO 都按统一协议返回。认证、权限、会话撤销、超时和错误码由服务端统一处理。
 
-### oxMWH 与客户端行情链路
+## 目录说明
 
-```mermaid
-flowchart LR
-    MS[oxMWH\nIMarketSource + OxMwhService] --> AQ[AsyncMarketPublisher\n有界队列/背压策略]
-    AQ --> WP[MarketWirePublisher\n显式小端协议]
-    WP --> MB[oxMBS MarketWireBroadcaster\n订阅过滤/序号断档检测]
-    MB --> WF[MarketWireFeed\n半包/粘包解码]
-    WF --> HUB[MarketHub\n标准化、去重、乱序保护\n有界 Tick 缓冲、分钟 K 线]
-    MF[同仓库 MockMarketSource] --> MS
-    PT[可选 PyTdxJsonLineFeed\n仅开发适配] -. 注入行情源 .-> MS
-    HUB --> SVC[MarketService]
-    HUB --> QT[AsyncQtBridge\nQt queued signal]
-    SVC --> UI[行情页快照查询]
-    QT --> UI
-    IPC[低频 System V IPC / Query Worker] -. 禁止进入 .-> MS
+```text
+client/                         Python/PySide6 客户端
+  vnpy_oxapp/
+    ui/                         登录页、导航、行情页、工作台页面
+    services/                   UserService、MarketService、Session
+    hpsocket_transport.py       PackMessage HP-Socket 传输层
+    market/                     本地行情适配、事件模型和开发桥接
+  README.md                     客户端运行说明
+
+src/                            C++ 服务端实现
+  oxmbs/
+    network/                    HP-Socket Server、Bridge、PackMessage
+    auth/                       AuthService、credential store、session
+    routing/                    WorkFuncRouter
+    ipc/                        System V IPC 与关联管理
+    worker/                     Query Worker runtime
+    lbm/                        LBM loader、dispatcher、QMT 模块
+    service/                    QMT Service Router、Repository Adapter
+    storage/                    PostgreSQL Repository 与连接池
+    config/                     INI 配置解析
+    mock/                       开发联调用的 mock backend
+
+include/                        C++ 公共头文件
+config/                         配置模板
+docs/                           架构、工单、路线图、阶段说明
+  work-orders/                  OX-P0 / OX-P1 工单
+  architecture/                 架构说明
+outputs/                        原型、阶段说明、交付说明
+tests/                          C++ 与 Python 测试
 ```
 
-`OxMwhService` 只负责行情源回调的字段校验、代码标准化、订阅过滤、源序号去重/乱序保护和发布，
-不执行数据库、慢查询或交易逻辑。当前已实现 `MarketWire` 临时协议、异步发布队列和同仓库 `oxMBS`
-广播核心；外部券商 SDK、正式 HP-Socket 和正式 PackMessage 仍通过接口适配，
-待 Mentor 确认后接入。`MarketHub` 负责客户端快照、Tick/K 线缓存和 Qt 刷新；当前实现用于开发和演示，
-不宣称生产级低时延，也不能用作真实下单或风控依据。`MarketWireFeed` 当前由外部传输层注入字节，
-不会自行连接或启动另一个项目。
+## 关键技术栈
 
-### 管理 CRUD 时序
+- C++17、CMake、CTest
+- HP-Socket、PackMessage、JSON 协议
+- PostgreSQL、libpq、连接池、QMT `ta_data`
+- PySide6、Python 3.12、客户端传输封装
+- System V IPC、Query Worker、LBM 动态插件
+- Mermaid、Markdown 工单与阶段说明
 
-```mermaid
-sequenceDiagram
-    participant U as 操作员
-    participant V as Qt 表格页
-    participant S as Service
-    participant B as Mock Backend
-    participant L as Mock LBM
-    U->>V: 查询/新增/编辑/启停/删除
-    V->>U: 删除操作二次确认
-    V->>S: 携带 record_id 的业务请求
-    S->>B: Mock-only 请求
-    B->>L: Router + Request Queue + Worker
-    L->>L: 校验、修改 Mock 快照、写 Mock 审计日志
-    L-->>B: 带 request_id/session_id 的响应
-    B-->>S: 成功、空结果或结构化错误
-    S-->>V: Qt 线程安全响应
-    V->>S: 成功后重新查询
-    S-->>V: 更新后的表格快照
+## 最快启动方式
+
+### 1. 克隆仓库
+
+```bash
+git clone git@github.com:Weatherbless2/oxtrade.git
+cd oxtrade
 ```
 
-## 功能说明
-
-### 系统管理
-
-- **系统菜单**：查询、关键字筛选、新增、编辑、启停、删除。
-- **数据字典**：查询、筛选、新增、编辑、启停、删除。
-- **字典明细**：查询、筛选、新增、编辑、启停、删除。
-- **在线日志**：关键字筛选、级别筛选和分页；日志记录不可删除。
-- **服务状态**：服务地址、状态、Worker 数、延迟和最近心跳；运行快照不可删除。
-
-### 用户与权限
-
-- 用户、角色、站点和托管服务支持查询、筛选、CRUD、启停/冻结。
-- 站点 Mock 字段覆盖 IP 策略、MAC 配置占位、多点登录配置和状态展示。
-- 角色菜单、用户菜单、产品和资产权限作为独立数据集展示和维护。
-- 当前权限数据用于页面和错误状态演示，尚未作为正式后端鉴权依据。
-
-### 产品、行情与交易
-
-- 产品、项目、资金账号和资产-资金账号关联支持分页、筛选、CRUD 和状态切换。
-- 行情页提供报价、Tick、1 分钟 K 线、盘口和订阅；默认生成 Mock 实时快照，也可切换到已有的 PyTdx Bridge。
-- 交易页提供限价委托、数量校验、资金/仓位冻结、撤单、模拟成交，以及账户、持仓、委托、成交查询。
-- 交易数据只存在于 Mock Gateway 进程内，重启后恢复初始快照。
-
-## Build
-
-Prerequisites:
-
-- CMake 3.20 or newer
-- C++17 compiler
-
-Configure and build on Linux or WSL:
+### 2. 构建 C++ 服务
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j
-```
-
-运行 C++ 测试：
-
-```bash
+cmake --build build -j2
 ctest --test-dir build --output-on-failure
 ```
 
-运行基础 C++ 程序：
-
-```bash
-./build/bin/oxApp
-```
-
-Run the oxMBS configuration and runtime logging bootstrap:
-
-```bash
-cp config/mbsconfig.ini.example config/mbsconfig.ini
-./build/bin/oxMbsBootstrap config/mbsconfig.ini
-```
-
-`oxMbsBootstrap` 是工单 #3 的后台基础程序。它校验 INI 配置、创建本次运行日志、
-输出关键事件，并报告 Linux/WSL CPU、内存和磁盘信息；它不是本次 Mock 客户端的完整业务入口。
-
-## Layout
-
-```text
-config/     Checked-in configuration templates only
-docs/       Architecture and development notes
-include/    Public C++ headers
-src/        Application source
-tests/      CTest-based automated tests
-client/     #16 Python/vn.py extension, Mock transport and Qt page shell
-```
-
-## Mock 端到端客户端
-
-`client/vnpy_oxapp` 是基于 vn.py Qt 组织方式改造的独立客户端扩展：它提供可替换的通信接口、
-统一请求/响应/错误模型、会话、客户端日志、控件加载耗时和左侧导航工作台。页面只依赖 Service
-接口，不直接读取 Mock 容器或数据库。
-
-三条路径共用异步请求关联和错误模型，但行情/交易不会进入慢查询 IPC；同仓库 `oxMWH` 核心已经提供
-行情源和发布端抽象，正式 HP-Socket、券商 SDK、交易网关、查询核心和真实 LBM 仍在后续工单接入。
-
-安装依赖并运行：
+### 3. 启动客户端
 
 ```bash
 python3 -m venv .venv
-. .venv/bin/activate
+source .venv/bin/activate
 python -m pip install -r client/requirements.txt
 PYTHONPATH=client python -m unittest discover -s tests/python -v
 PYTHONPATH=client python -m vnpy_oxapp.app
 ```
 
-## 运行方式
+### 4. 配置文件
+
+服务端配置模板：
 
 ```bash
-cmake --build build -j2
-PYTHONPATH=client .venv/bin/python -m vnpy_oxapp.app
+cp config/mbsconfig.ini.example config/mbsconfig.ini
 ```
 
-登录演示用户：`yangjh`；演示密码：`mock-password`。
-
-### 行情配置
-
-先生成本机配置，默认不用网络即可运行：
+客户端配置模板：
 
 ```bash
 cp config/oxapp.ini.example config/oxapp.ini
-# 保持 [market] source=mock
-PYTHONPATH=client .venv/bin/python -m vnpy_oxapp.app
 ```
 
-如需验证可选 PyTdx 开发适配，可在外部环境提供兼容的 JSON-lines 服务，再将本机配置改为：
+当前默认演示用户：
 
-```ini
-[market]
-source=pytdx
-pytdx_host=127.0.0.1
-pytdx_port=19001
-reconnect_seconds=2
-fallback_after_seconds=5
-```
+- 用户名：`yangjh`
+- 密码：`mock-password`
 
-本仓库不会自动启动外部项目；服务不可用、网络断开或没有收到有效行情时，客户端仍使用仓库内 Mock 行情。
-当前可选适配仅覆盖开发验证，期货、期权及生产行情商 SDK 需要后续按正式协议实现。
-
-## 测试
-
-在 **WSL Ubuntu 24.04** 中按顺序执行：
+## 常用验证命令
 
 ```bash
-cd /root/projects/TA/oxApp
 cmake --build build -j2
 ctest --test-dir build --output-on-failure
 PYTHONPATH=client .venv/bin/python -m unittest discover -s tests/python -v
 PYTHONPATH=client .venv/bin/python -m compileall -q client/vnpy_oxapp
 ```
 
-验收以以上命令的实际结果为准；测试覆盖 C++ 基础设施、Mock 端到端、行情字段标准化、TCP 拆包、重连、
-Mock 回退、乱序去重、K 线聚合和 Qt 主线程交付。
+## 工单和学习路线
 
-## 运行流程
+建议按下面顺序阅读，而不是一开始就看全部代码：
 
-1. 构建 `build/bin/oxMbsMockBackend`。
-2. 启动 Qt 客户端。
-3. 在左侧导航切换系统管理、用户权限、产品资金、风控管理、行情中心、交易终端和登录会话。
-4. 管理配置类页面的删除按钮会先弹出二次确认；在线日志、服务状态和风控事件不提供删除按钮。
-5. 登录演示用户 `yangjh`，密码 `mock-password`。
+1. `docs/work-orders/OX-production-roadmap.md`
+2. `docs/work-orders/OX-P0-04-client-real-transport.md`
+3. `docs/work-orders/OX-P0-07-qmt-service-router.md`
+4. `docs/work-orders/OX-P0-08-reply-bridge.md`
+5. `docs/work-orders/OX-P0-09-lbm-runtime.md`
+6. `docs/work-orders/OX-P0-10-response-capacity.md`
+7. `docs/work-orders/OX-P0-11-lbm-qmt.md`
+8. `docs/work-orders/OX-P0-12-qmt-workbench.md`
+9. `outputs/oxapp-前端体验与QMT工作台改版规划-v1.0.md`
+10. `outputs/oxapp-frontend-prototype-v2.html`
 
-运行日志默认写入仓库根目录的 `logs/oxTrader_YYYYMMDD_HHMMSS.log`；`logs/`、`build/`、运行配置和凭据不会提交。
+每张工单都尽量保留代码、测试、阶段说明和设计边界。
 
-## 后续接入顺序
+## 当前限制和下一步
 
-```mermaid
-flowchart LR
-    M[#24 Mock-first 客户端闭环] --> D[#9 tt_stream + OTL + ODBC]
-    D --> G[#10 表实体/Manager 代码生成]
-    G --> L[#11-#13 正式业务 LBM]
-    L --> H[#18-#21 Mock 服务替换为正式 HP-Socket]
-    H --> E[#23 端到端联调]
-    P[#14 开发版 PyTdx 行情] --> E
-    Q[正式券商 SDK / HP-Socket / PackMessage] -. 协议确认后接入 oxMWH 适配器 .-> H
-```
+- 当前阶段不包含 TLS、真实柜台、报单和资金操作。
+- `OX-P1-01` 的实时 QMT Push 已设计但未作为本轮核心落地。
+- QMT token、本地 profile、数据库密码和私有密钥都不属于仓库提交内容。
+- 当前仓库更强调工程可演进性，而不是直接交付生产交易能力。
 
-当前分支只验证客户端、#1-#8 基础设施和同仓库 oxMWH 开发核心，不提前宣称数据库、正式 LBM、正式 HP-Socket、
-真实权限、生产低时延行情或真实交易完成。
+## GitHub 仓库描述建议
 
-## 开发边界
+如果要把仓库描述同步到 GitHub，建议填写：
 
-本分支只完成 Mock-first 的客户端可见业务演示和 #1-#8 基础设施联调。工单 #9-#13
-仍未实现：`tt_stream/OTL/ODBC`、数据库表实体生成、正式 `lbm_sys/lbm_right/lbm_fund`
-及真实持久化。正式 HP-Socket/PackMessage 也未接入，临时 stdin/stdout 协议和 Mock
-消息编号不能作为生产协议使用。
+`oxtrade / oxApp：Qt 桌面客户端 + C++ 服务端 + HP-Socket + QMT/PostgreSQL 行情链路，覆盖登录、认证、会话、LBM 插件、行情工作台和工程化文档。`
 
-详细链路、协议边界和后续替换点见 [Mock 端到端联调说明](docs/mock-backend-end-to-end.md) 和
-[开发版行情路由说明](docs/architecture/market-routing.md)。
+## 关于仓库内容和敏感配置
 
-Local logs, build output, runtime configuration, credentials, and private keys
-must not be committed.
+当前仓库保留了代码、工单、阶段说明、架构文档、原型和运行说明。按安全边界，仓库不提交 QMT token、数据库密码、本机 profile、SSH 私钥或任何本地凭据文件。
+
+本地 `build/`、`.venv/`、`logs/`、`config/lbm/`、运行时配置和凭据文件都不应上传。
